@@ -6,12 +6,13 @@ const fs = require("fs");
 const app = express();
 app.use(express.json());
 
+// 🔴 CONFIG
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GDrSXm.inJS80ZyXz1ldSxxqCBbqU74wuw_ovECnUouPo";
 const CHANNEL_ID = "1498019172737876240";
 
 const FILE = "./registeredGames.json";
 
-// load saved games
+// 📦 load saved registered games
 let registered = fs.existsSync(FILE)
     ? JSON.parse(fs.readFileSync(FILE))
     : {};
@@ -21,14 +22,17 @@ function save() {
 }
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages
+    ]
 });
 
 client.once("ready", () => {
-    console.log("Bot ready");
+    console.log("Bot online");
 });
 
-// 🔥 GET GAME ICON
+// 🔥 GET ROBLOX ICON
 async function getIcon(placeId) {
     try {
         const res = await axios.get(
@@ -40,51 +44,52 @@ async function getIcon(placeId) {
     }
 }
 
+// 📡 MAIN ENDPOINT
 app.post("/report", async (req, res) => {
     const { placeId, name } = req.body;
 
-    // ❌ already registered → do nothing
+    // ❌ already registered → ignore forever
     if (registered[placeId]) {
         return res.json({ ok: true, skipped: true });
     }
 
     try {
         const channel = await client.channels.fetch(CHANNEL_ID);
+
         const icon = await getIcon(placeId);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        // ✅ SEND LINK (THIS CREATES DISCORD PREVIEW)
-        await channel.send({
-            content: gameUrl
-        });
-
-        // ✅ SEND EMBED (OPTIONAL BUT CLEAN)
+        // 🎮 SEND ONE MESSAGE ONLY
         await channel.send({
             embeds: [
                 {
                     title: name || "Unknown Game",
+                    url: gameUrl,
                     color: 0x00ffcc,
-                    thumbnail: icon ? { url: icon } : undefined
+                    description: `🔗 [Join Game](${gameUrl})`,
+                    thumbnail: icon ? { url: icon } : undefined,
+                    image: icon ? { url: icon } : undefined
                 }
             ]
         });
 
-        // save so it never sends again
+        // 💾 mark as registered
         registered[placeId] = true;
         save();
 
-        console.log("Registered:", placeId);
+        console.log("Registered game:", placeId);
 
         res.json({ ok: true });
     } catch (e) {
-        console.log(e.message);
+        console.log("Error:", e.message);
         res.json({ ok: false });
     }
 });
 
+// 🚀 START SERVER
 app.listen(3000, () => {
-    console.log("Tracker running");
+    console.log("Tracker running on port 3000");
 });
 
 client.login(TOKEN);
