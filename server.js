@@ -1,6 +1,5 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
-const axios = require("axios");
 const fs = require("fs");
 
 const app = express();
@@ -11,12 +10,10 @@ const CHANNEL_ID = "1498019172737876240";
 
 const FILE = "./messages.json";
 
+// load saved messages
 let messages = fs.existsSync(FILE)
     ? JSON.parse(fs.readFileSync(FILE))
     : {};
-
-// 🔒 LOCK SYSTEM
-let locks = {};
 
 function save() {
     fs.writeFileSync(FILE, JSON.stringify(messages, null, 2));
@@ -26,19 +23,11 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-function gameLink(placeId) {
-    return `https://www.roblox.com/games/${placeId}`;
-}
+// 🧠 COOLDOWN PER GAME (THIS IS THE KEY FIX)
+let lastUpdate = {};
 
-async function getIcon(placeId) {
-    try {
-        const res = await axios.get(
-            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
-        );
-        return res.data.data[0]?.imageUrl;
-    } catch {
-        return null;
-    }
+function gameLink(id) {
+    return `https://www.roblox.com/games/${id}`;
 }
 
 client.once("ready", () => {
@@ -48,19 +37,15 @@ client.once("ready", () => {
 async function updateGame(data) {
     const channel = await client.channels.fetch(CHANNEL_ID);
 
-    const icon = await getIcon(data.placeId);
-
     const embed = {
         title: data.name || "Unknown Game",
-        color: 0x00ffcc,
-        thumbnail: icon ? { url: icon } : undefined,
         description:
 `👥 Players: ${data.players}
-🔗 Join: ${gameLink(data.placeId)}
-🆔 ${data.placeId}`
+🔗 ${gameLink(data.placeId)}`,
+        color: 0x00ffcc
     };
 
-    // 🔁 EDIT IF EXISTS
+    // 🔒 IF MESSAGE EXISTS → EDIT ONLY
     if (messages[data.placeId]) {
         try {
             const msg = await channel.messages.fetch(messages[data.placeId]);
@@ -72,7 +57,7 @@ async function updateGame(data) {
         }
     }
 
-    // 🆕 CREATE ONCE
+    // 🆕 CREATE ONLY ONCE EVER
     const msg = await channel.send({ embeds: [embed] });
     messages[data.placeId] = msg.id;
     save();
@@ -82,12 +67,12 @@ async function updateGame(data) {
 app.post("/report", async (req, res) => {
     const data = req.body;
 
-    // 🔒 LOCK PER GAME
-    if (locks[data.placeId]) {
+    // 🧠 HARD COOLDOWN (prevents spam completely)
+    if (lastUpdate[data.placeId] && Date.now() - lastUpdate[data.placeId] < 5000) {
         return res.json({ ok: true, skipped: true });
     }
 
-    locks[data.placeId] = true;
+    lastUpdate[data.placeId] = Date.now();
 
     try {
         await updateGame(data);
@@ -96,11 +81,6 @@ app.post("/report", async (req, res) => {
         console.log(e.message);
         res.json({ ok: false });
     }
-
-    // 🔓 RELEASE LOCK AFTER SHORT TIME
-    setTimeout(() => {
-        delete locks[data.placeId];
-    }, 2000);
 });
 
 app.listen(3000, () => {
