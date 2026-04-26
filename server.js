@@ -11,10 +11,12 @@ const CHANNEL_ID = "1498019172737876240";
 
 const FILE = "./messages.json";
 
-// load saved messages
 let messages = fs.existsSync(FILE)
     ? JSON.parse(fs.readFileSync(FILE))
     : {};
+
+// 🔒 LOCK SYSTEM
+let locks = {};
 
 function save() {
     fs.writeFileSync(FILE, JSON.stringify(messages, null, 2));
@@ -43,9 +45,9 @@ client.once("ready", () => {
     console.log("Bot ready");
 });
 
-// 🔥 CORE SYSTEM
-async function handleGame(data) {
+async function updateGame(data) {
     const channel = await client.channels.fetch(CHANNEL_ID);
+
     const icon = await getIcon(data.placeId);
 
     const embed = {
@@ -58,37 +60,7 @@ async function handleGame(data) {
 🆔 ${data.placeId}`
     };
 
-    // 🔍 CLEAN DUPLICATES FIRST
-    const recent = await channel.messages.fetch({ limit: 50 });
-
-    const duplicates = recent.filter(msg =>
-        msg.author.id === client.user.id &&
-        msg.embeds[0] &&
-        msg.embeds[0].description &&
-        msg.embeds[0].description.includes(data.placeId.toString())
-    );
-
-    // keep only one
-    let mainMessage = null;
-
-    if (duplicates.size > 0) {
-        mainMessage = duplicates.first();
-
-        // delete extras
-        let i = 0;
-        duplicates.forEach(msg => {
-            if (i === 0) {
-                messages[data.placeId] = msg.id;
-                i++;
-            } else {
-                msg.delete().catch(() => {});
-            }
-        });
-
-        save();
-    }
-
-    // 🔁 EDIT EXISTING
+    // 🔁 EDIT IF EXISTS
     if (messages[data.placeId]) {
         try {
             const msg = await channel.messages.fetch(messages[data.placeId]);
@@ -100,7 +72,7 @@ async function handleGame(data) {
         }
     }
 
-    // 🆕 CREATE ONLY IF NONE EXISTS
+    // 🆕 CREATE ONCE
     const msg = await channel.send({ embeds: [embed] });
     messages[data.placeId] = msg.id;
     save();
@@ -108,13 +80,27 @@ async function handleGame(data) {
 
 // 📡 ROBLOX → SERVER
 app.post("/report", async (req, res) => {
+    const data = req.body;
+
+    // 🔒 LOCK PER GAME
+    if (locks[data.placeId]) {
+        return res.json({ ok: true, skipped: true });
+    }
+
+    locks[data.placeId] = true;
+
     try {
-        await handleGame(req.body);
+        await updateGame(data);
         res.json({ ok: true });
     } catch (e) {
         console.log(e.message);
         res.json({ ok: false });
     }
+
+    // 🔓 RELEASE LOCK AFTER SHORT TIME
+    setTimeout(() => {
+        delete locks[data.placeId];
+    }, 2000);
 });
 
 app.listen(3000, () => {
