@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // 🔴 DISCORD WEBHOOK
-const WEBHOOK = "YOUR_DISCORD_WEBHOOK";
+const WEBHOOK = "https://discord.com/api/webhooks/1498019226781487214/rdMl22CBYIZvEmVbnLb7hja3Qb2FVVBpms8kokNYS-tFGdnScSG38Z_5uH77xBbl-TJk";
 
 // 🔴 YOUR RENDER URL (CHANGE IF DIFFERENT)
 const BASE_URL = "https://roblox-tracker-v5aq.onrender.com";
