@@ -1,46 +1,85 @@
 const express = require("express");
+const { Client, GatewayIntentBits } = require("discord.js");
 const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-const WEBHOOK = "https://discord.com/api/webhooks/1498019226781487214/rdMl22CBYIZvEmVbnLb7hja3Qb2FVVBpms8kokNYS-tFGdnScSG38Z_5uH77xBbl-TJk";
+const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GULBam.8pRljKPamJ33FBT8kK0epT2cnutlgYGnSckj8E";
+const CHANNEL_ID = "1498019171789705279";
 
-let lastData = {};
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+});
 
-function sendToDiscord(data) {
-    const gameLink = `https://www.roblox.com/games/${data.placeId}`;
+// 🔴 STORE MESSAGE IDS (in memory)
+let messages = {};
 
-    axios.post(WEBHOOK, {
-        content:
-`🎮 Roblox Server Update
-📛 Game: **${data.name || "Unknown"}**
-👥 Players: **${data.players}**
-🔗 Join Game: ${gameLink}
-🆔 PlaceId: ${data.placeId}`
-    }).catch(console.log);
+// 🔥 ROBLOX ICON
+async function getIcon(placeId) {
+    try {
+        const res = await axios.get(
+            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
+        );
+        return res.data.data[0]?.imageUrl || null;
+    } catch {
+        return null;
+    }
 }
 
-app.post("/report", (req, res) => {
-    const { placeId, name, players } = req.body;
+function gameLink(placeId) {
+    return `https://www.roblox.com/games/${placeId}`;
+}
 
-    // 🧠 FIX: prevent duplicate spam
-    const key = placeId;
-    const newData = `${players}`;
+client.once("ready", () => {
+    console.log("Bot ready");
+});
 
-    if (lastData[key] === newData) {
-        return res.json({ ok: false, skipped: true });
+// 🔥 CORE FIX FUNCTION
+async function updateDiscord(data) {
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    const icon = await getIcon(data.placeId);
+
+    const embed = {
+        title: data.name || "Unknown Game",
+        color: 0x00ffcc,
+        thumbnail: icon ? { url: icon } : undefined,
+        description:
+`👥 Players: ${data.players}
+🔗 Join: ${gameLink(data.placeId)}
+🆔 ${data.placeId}`
+    };
+
+    try {
+        // IF MESSAGE EXISTS → EDIT
+        if (messages[data.placeId]) {
+            const msg = await channel.messages.fetch(messages[data.placeId]);
+            await msg.edit({ embeds: [embed] });
+            return;
+        }
+    } catch {
+        // message might have been deleted → recreate
+        delete messages[data.placeId];
     }
 
-    lastData[key] = newData;
+    // IF NOT FOUND → CREATE ONCE
+    const newMsg = await channel.send({ embeds: [embed] });
+    messages[data.placeId] = newMsg.id;
+}
 
-    console.log("Tracked:", req.body);
-
-    sendToDiscord(req.body);
-
-    res.json({ ok: true });
+// 📡 ROBLOX → SERVER
+app.post("/report", async (req, res) => {
+    try {
+        await updateDiscord(req.body);
+        res.json({ ok: true });
+    } catch (e) {
+        console.log(e.message);
+        res.json({ ok: false });
+    }
 });
 
-app.listen(process.env.PORT || 3000, () => {
+app.listen(3000, () => {
     console.log("Tracker running");
 });
+
+client.login(TOKEN);
