@@ -1,42 +1,50 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
 const axios = require("axios");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 
-const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GULBam.8pRljKPamJ33FBT8kK0epT2cnutlgYGnSckj8E";
-const CHANNEL_ID = "1498019171789705279";
+const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GDrSXm.inJS80ZyXz1ldSxxqCBbqU74wuw_ovECnUouPo";
+const CHANNEL_ID = "1498019172737876240";
+
+const FILE = "./messages.json";
+
+// load saved messages
+let messages = fs.existsSync(FILE)
+    ? JSON.parse(fs.readFileSync(FILE))
+    : {};
+
+function save() {
+    fs.writeFileSync(FILE, JSON.stringify(messages, null, 2));
+}
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-// 🔴 STORE MESSAGE IDS (in memory)
-let messages = {};
+function gameLink(placeId) {
+    return `https://www.roblox.com/games/${placeId}`;
+}
 
-// 🔥 ROBLOX ICON
 async function getIcon(placeId) {
     try {
         const res = await axios.get(
             `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
         );
-        return res.data.data[0]?.imageUrl || null;
+        return res.data.data[0]?.imageUrl;
     } catch {
         return null;
     }
-}
-
-function gameLink(placeId) {
-    return `https://www.roblox.com/games/${placeId}`;
 }
 
 client.once("ready", () => {
     console.log("Bot ready");
 });
 
-// 🔥 CORE FIX FUNCTION
-async function updateDiscord(data) {
+// 🔥 CORE SYSTEM
+async function handleGame(data) {
     const channel = await client.channels.fetch(CHANNEL_ID);
     const icon = await getIcon(data.placeId);
 
@@ -50,27 +58,58 @@ async function updateDiscord(data) {
 🆔 ${data.placeId}`
     };
 
-    try {
-        // IF MESSAGE EXISTS → EDIT
-        if (messages[data.placeId]) {
+    // 🔍 CLEAN DUPLICATES FIRST
+    const recent = await channel.messages.fetch({ limit: 50 });
+
+    const duplicates = recent.filter(msg =>
+        msg.author.id === client.user.id &&
+        msg.embeds[0] &&
+        msg.embeds[0].description &&
+        msg.embeds[0].description.includes(data.placeId.toString())
+    );
+
+    // keep only one
+    let mainMessage = null;
+
+    if (duplicates.size > 0) {
+        mainMessage = duplicates.first();
+
+        // delete extras
+        let i = 0;
+        duplicates.forEach(msg => {
+            if (i === 0) {
+                messages[data.placeId] = msg.id;
+                i++;
+            } else {
+                msg.delete().catch(() => {});
+            }
+        });
+
+        save();
+    }
+
+    // 🔁 EDIT EXISTING
+    if (messages[data.placeId]) {
+        try {
             const msg = await channel.messages.fetch(messages[data.placeId]);
             await msg.edit({ embeds: [embed] });
             return;
+        } catch {
+            delete messages[data.placeId];
+            save();
         }
-    } catch {
-        // message might have been deleted → recreate
-        delete messages[data.placeId];
     }
 
-    // IF NOT FOUND → CREATE ONCE
-    const newMsg = await channel.send({ embeds: [embed] });
-    messages[data.placeId] = newMsg.id;
+    // 🆕 CREATE ONLY IF NONE EXISTS
+    const msg = await channel.send({ embeds: [embed] });
+    messages[data.placeId] = msg.id;
+    save();
 }
 
 // 📡 ROBLOX → SERVER
 app.post("/report", async (req, res) => {
     try {
-        await updateDiscord(req.body);
+        await handleGame(req.body);
         res.json({ ok: true });
     } catch (e) {
         console.log(e.message);
