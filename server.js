@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json());
 
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GvAONq.oY-JLhgWy0Szk5YY0AGGOZwbfdVSGgdVd6mBRE";
-const CHANNEL_ID = "1498019172737876240";
+const CHANNEL_ID = "1498019171789705279";
 
 const FILE = "./registeredGames.json";
 
@@ -24,11 +24,11 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-function gameLink(placeId) {
-    return `https://www.roblox.com/games/${placeId}`;
-}
+client.once("ready", () => {
+    console.log("Bot ready");
+});
 
-// 🔥 get real icon
+// 🔥 GET GAME ICON
 async function getIcon(placeId) {
     try {
         const res = await axios.get(
@@ -40,14 +40,10 @@ async function getIcon(placeId) {
     }
 }
 
-client.once("ready", () => {
-    console.log("Bot ready");
-});
-
 app.post("/report", async (req, res) => {
     const { placeId, name } = req.body;
 
-    // ❌ already registered → ignore forever
+    // ❌ already registered → do nothing
     if (registered[placeId]) {
         return res.json({ ok: true, skipped: true });
     }
@@ -56,20 +52,29 @@ app.post("/report", async (req, res) => {
         const channel = await client.channels.fetch(CHANNEL_ID);
         const icon = await getIcon(placeId);
 
-        const embed = {
-            title: name || "Unknown Game",
-            color: 0x00ffcc,
-            thumbnail: icon ? { url: icon } : undefined,
-            description: `🔗 https://www.roblox.com/games/${placeId}`
-        };
+        const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        await channel.send({ embeds: [embed] });
+        // ✅ SEND LINK (THIS CREATES DISCORD PREVIEW)
+        await channel.send({
+            content: gameUrl
+        });
 
-        // ✅ mark as registered
+        // ✅ SEND EMBED (OPTIONAL BUT CLEAN)
+        await channel.send({
+            embeds: [
+                {
+                    title: name || "Unknown Game",
+                    color: 0x00ffcc,
+                    thumbnail: icon ? { url: icon } : undefined
+                }
+            ]
+        });
+
+        // save so it never sends again
         registered[placeId] = true;
         save();
 
-        console.log("Registered game:", placeId);
+        console.log("Registered:", placeId);
 
         res.json({ ok: true });
     } catch (e) {
