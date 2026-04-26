@@ -1,101 +1,90 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
-const axios = require("axios");
 const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 
-// 🔴 CONFIG (PUT NEW TOKEN HERE)
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GG6SeC.OQYEecbcHfqO-aEyZUL6fdUoVplXPq2-wxZK_c";
 const CHANNEL_ID = "1498019171789705279";
 
-const FILE = "./registeredGames.json";
+const FILE = "./messages.json";
 
-// 📦 LOAD DATABASE
-let registered = {};
-if (fs.existsSync(FILE)) {
-    registered = JSON.parse(fs.readFileSync(FILE));
-}
+// load saved messages
+let messages = fs.existsSync(FILE)
+    ? JSON.parse(fs.readFileSync(FILE))
+    : {};
 
 function save() {
-    fs.writeFileSync(FILE, JSON.stringify(registered, null, 2));
+    fs.writeFileSync(FILE, JSON.stringify(messages, null, 2));
 }
 
-// 🤖 DISCORD BOT
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
+
+// 🧠 COOLDOWN PER GAME (THIS IS THE KEY FIX)
+let lastUpdate = {};
+
+function gameLink(id) {
+    return `https://www.roblox.com/games/${id}`;
+}
 
 client.once("ready", () => {
-    console.log("✅ Bot online as:", client.user.tag);
+    console.log("Bot ready");
 });
 
-// 🎮 GET ROBLOX ICON
-async function getIcon(placeId) {
-    try {
-        const res = await axios.get(
-            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
-        );
+async function updateGame(data) {
+    const channel = await client.channels.fetch(CHANNEL_ID);
 
-        return res.data?.data?.[0]?.imageUrl || null;
-    } catch {
-        return null;
+    const embed = {
+        title: data.name || "Unknown Game",
+        description:
+`👥 Players: ${data.players}
+🔗 ${gameLink(data.placeId)}`,
+        color: 0x00ffcc
+    };
+
+    // 🔒 IF MESSAGE EXISTS → EDIT ONLY
+    if (messages[data.placeId]) {
+        try {
+            const msg = await channel.messages.fetch(messages[data.placeId]);
+            await msg.edit({ embeds: [embed] });
+            return;
+        } catch {
+            delete messages[data.placeId];
+            save();
+        }
     }
+
+    // 🆕 CREATE ONLY ONCE EVER
+    const msg = await channel.send({ embeds: [embed] });
+    messages[data.placeId] = msg.id;
+    save();
 }
 
-// 📡 MAIN ENDPOINT
+// 📡 ROBLOX → SERVER
 app.post("/report", async (req, res) => {
+    const data = req.body;
+
+    // 🧠 HARD COOLDOWN (prevents spam completely)
+    if (lastUpdate[data.placeId] && Date.now() - lastUpdate[data.placeId] < 5000) {
+        return res.json({ ok: true, skipped: true });
+    }
+
+    lastUpdate[data.placeId] = Date.now();
+
     try {
-        const { placeId, name } = req.body;
-
-        console.log("📩 Request:", req.body);
-
-        if (!placeId) {
-            return res.json({ ok: false, error: "missing placeId" });
-        }
-
-        // ❌ already exists
-        if (registered[placeId]) {
-            return res.json({ ok: true, skipped: true });
-        }
-
-        const channel = await client.channels.fetch(CHANNEL_ID);
-
-        const icon = await getIcon(placeId);
-        const gameUrl = `https://www.roblox.com/games/${placeId}`;
-
-        // 🔥 SINGLE CLEAN MESSAGE
-        await channel.send({
-            embeds: [
-                {
-                    title: name || "Unknown Game",
-                    url: gameUrl,
-                    color: 0x00ffcc,
-                    description: `🔗 [Join Game](${gameUrl})`,
-                    thumbnail: icon ? { url: icon } : undefined
-                }
-            ]
-        });
-
-        registered[placeId] = true;
-        save();
-
-        console.log("✅ Sent:", placeId);
-
+        await updateGame(data);
         res.json({ ok: true });
-
-    } catch (err) {
-        console.log("❌ ERROR:", err.message);
-        res.json({ ok: false, error: err.message });
+    } catch (e) {
+        console.log(e.message);
+        res.json({ ok: false });
     }
 });
 
-// 🚀 START SERVER
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log("🚀 Server running on port", PORT);
+app.listen(3000, () => {
+    console.log("Tracker running");
 });
 
 client.login(TOKEN);
