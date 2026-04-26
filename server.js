@@ -6,85 +6,96 @@ const fs = require("fs");
 const app = express();
 app.use(express.json());
 
-const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GvAONq.oY-JLhgWy0Szk5YY0AGGOZwbfdVSGgdVd6mBRE";
+// 🔴 CONFIG (PUT NEW TOKEN HERE)
+const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GG6SeC.OQYEecbcHfqO-aEyZUL6fdUoVplXPq2-wxZK_c";
 const CHANNEL_ID = "1498019171789705279";
 
 const FILE = "./registeredGames.json";
 
-// load saved games
-let registered = fs.existsSync(FILE)
-    ? JSON.parse(fs.readFileSync(FILE))
-    : {};
+// 📦 LOAD DATABASE
+let registered = {};
+if (fs.existsSync(FILE)) {
+    registered = JSON.parse(fs.readFileSync(FILE));
+}
 
 function save() {
     fs.writeFileSync(FILE, JSON.stringify(registered, null, 2));
 }
 
+// 🤖 DISCORD BOT
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+    intents: [GatewayIntentBits.Guilds]
 });
 
 client.once("ready", () => {
-    console.log("Bot ready");
+    console.log("✅ Bot online as:", client.user.tag);
 });
 
-// 🔥 GET GAME ICON
+// 🎮 GET ROBLOX ICON
 async function getIcon(placeId) {
     try {
         const res = await axios.get(
             `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
         );
-        return res.data.data[0]?.imageUrl;
+
+        return res.data?.data?.[0]?.imageUrl || null;
     } catch {
         return null;
     }
 }
 
+// 📡 MAIN ENDPOINT
 app.post("/report", async (req, res) => {
-    const { placeId, name } = req.body;
-
-    // ❌ already registered → do nothing
-    if (registered[placeId]) {
-        return res.json({ ok: true, skipped: true });
-    }
-
     try {
-        const channel = await client.channels.fetch(CHANNEL_ID);
-        const icon = await getIcon(placeId);
+        const { placeId, name } = req.body;
 
+        console.log("📩 Request:", req.body);
+
+        if (!placeId) {
+            return res.json({ ok: false, error: "missing placeId" });
+        }
+
+        // ❌ already exists
+        if (registered[placeId]) {
+            return res.json({ ok: true, skipped: true });
+        }
+
+        const channel = await client.channels.fetch(CHANNEL_ID);
+
+        const icon = await getIcon(placeId);
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        // ✅ SEND LINK (THIS CREATES DISCORD PREVIEW)
-        await channel.send({
-            content: gameUrl
-        });
-
-        // ✅ SEND EMBED (OPTIONAL BUT CLEAN)
+        // 🔥 SINGLE CLEAN MESSAGE
         await channel.send({
             embeds: [
                 {
                     title: name || "Unknown Game",
+                    url: gameUrl,
                     color: 0x00ffcc,
+                    description: `🔗 [Join Game](${gameUrl})`,
                     thumbnail: icon ? { url: icon } : undefined
                 }
             ]
         });
 
-        // save so it never sends again
         registered[placeId] = true;
         save();
 
-        console.log("Registered:", placeId);
+        console.log("✅ Sent:", placeId);
 
         res.json({ ok: true });
-    } catch (e) {
-        console.log(e.message);
-        res.json({ ok: false });
+
+    } catch (err) {
+        console.log("❌ ERROR:", err.message);
+        res.json({ ok: false, error: err.message });
     }
 });
 
-app.listen(3000, () => {
-    console.log("Tracker running");
+// 🚀 START SERVER
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log("🚀 Server running on port", PORT);
 });
 
 client.login(TOKEN);
