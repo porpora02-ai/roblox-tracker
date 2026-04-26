@@ -4,35 +4,50 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-// 🔴 PUT YOUR DISCORD WEBHOOK HERE
-const WEBHOOK = "https://discord.com/api/webhooks/1498019226781487214/rdMl22CBYIZvEmVbnLb7hja3Qb2FVVBpms8kokNYS-tFGdnScSG38Z_5uH77xBbl-TJk";
+// 🔴 DISCORD WEBHOOK
+const WEBHOOK = "YOUR_DISCORD_WEBHOOK";
+
+// 🔴 YOUR RENDER URL (CHANGE IF DIFFERENT)
+const BASE_URL = "https://roblox-tracker-v5aq.onrender.com";
+
+let lastSent = {};
 
 app.get("/", (req, res) => {
     res.send("Roblox Tracker Online");
 });
 
-// Roblox sends data here
 app.post("/report", async (req, res) => {
     const { placeId, name, players } = req.body;
 
-    console.log("Received:", req.body);
+    // 🧠 FIX 1: prevent duplicate spam (only send if changed)
+    const key = `${placeId}`;
+
+    if (lastSent[key] === players) {
+        return res.json({ ok: false, skip: true });
+    }
+
+    lastSent[key] = players;
+
+    console.log("Tracked:", req.body);
 
     try {
         await axios.post(WEBHOOK, {
             content:
-`🎮 Roblox Server Update
-📛 Game: ${name}
-🆔 PlaceId: ${placeId}
-👥 Players: ${players}`
+`🎮 **Roblox Server Update**
+📛 Game: **${name || "Unknown Game"}**
+👥 Players: **${players}**
+🔗 Link: ${BASE_URL}
+
+🆔 PlaceId: ${placeId}`
         });
 
         res.json({ ok: true });
     } catch (err) {
-        console.log(err.message);
+        console.log("Discord error:", err.message);
         res.json({ ok: false });
     }
 });
 
 app.listen(process.env.PORT || 3000, () => {
-    console.log("Server running");
+    console.log("Tracker running");
 });
