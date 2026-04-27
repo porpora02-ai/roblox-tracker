@@ -1,71 +1,51 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
-const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-// 🔴 CONFIG
+// 🔴 CONFIG (REPLACE THESE)
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GG6SeC.OQYEecbcHfqO-aEyZUL6fdUoVplXPq2-wxZK_c";
-const CHANNEL_ID = "1498019171789705279";
+const CHANNEL_ID = "1498019172737876240";
 
-// 🤖 DISCORD BOT
+// 🤖 DISCORD CLIENT (SAFE)
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// Safe login (prevents deploy crash)
+// 🚀 LOGIN (DO NOT CRASH SERVER IF FAILS)
 client.login(TOKEN)
     .then(() => console.log("✅ Discord bot online"))
     .catch(err => console.log("❌ Bot login failed:", err.message));
 
-// 🧠 Roblox icon fetch (safe, optional)
-async function getIcon(placeId) {
-    try {
-        const res = await axios.get(
-            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
-        );
-        return res.data?.data?.[0]?.imageUrl || null;
-    } catch {
-        return null;
-    }
-}
-
-// 📡 ROOT CHECK
+// 📡 ROOT TEST
 app.get("/", (req, res) => {
-    res.send("Server running");
+    res.send("Server running + bot active");
 });
 
 // 📡 ROBLOX REPORT ENDPOINT
 app.post("/report", async (req, res) => {
     try {
-        const { placeId, name } = req.body;
+        console.log("📩 Roblox hit:", req.body);
 
-        console.log("📩 Roblox request:", req.body);
+        const { placeId, name } = req.body;
 
         if (!placeId) {
             return res.json({ ok: false, error: "missing placeId" });
         }
 
-        const channel = await client.channels.fetch(CHANNEL_ID);
+        // 🔥 SAFE CHANNEL ACCESS
+        const channel = client.channels.cache.get(CHANNEL_ID);
 
         if (!channel) {
+            console.log("❌ Channel not found");
             return res.json({ ok: false, error: "channel not found" });
         }
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
-        const icon = await getIcon(placeId);
 
         await channel.send({
-            embeds: [
-                {
-                    title: name || "Unknown Game",
-                    url: gameUrl,
-                    color: 0x00ffcc,
-                    description: `🔗 [Join Game](${gameUrl})`,
-                    thumbnail: icon ? { url: icon } : undefined
-                }
-            ]
+            content: `🎮 **${name || "Unknown Game"}**\n🔗 ${gameUrl}`
         });
 
         console.log("✅ Sent to Discord");
