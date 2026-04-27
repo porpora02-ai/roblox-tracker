@@ -8,41 +8,48 @@ app.use(express.json());
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GG6SeC.OQYEecbcHfqO-aEyZUL6fdUoVplXPq2-wxZK_c";
 const CHANNEL_ID = "1498019171789705279";
 
-// 🤖 DISCORD BOT
+// 🤖 BOT
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
+let botReady = false;
+
 client.once("ready", () => {
-    console.log("✅ Bot online:", client.user.tag);
+    botReady = true;
+    console.log("✅ Bot ready as:", client.user.tag);
 });
 
-// 📡 ROBLOX REPORT
-app.post("/report", async (req, res) => {
-    try {
-        const { placeId, name } = req.body;
+// 🚀 LOGIN
+client.login(TOKEN).catch(err => {
+    console.log("❌ Login error:", err.message);
+});
 
+// 📡 TEST ROUTE (IMPORTANT)
+app.get("/test", async (req, res) => {
+    if (!botReady) {
+        return res.send("Bot not ready yet");
+    }
+
+    try {
         const channel = await client.channels.fetch(CHANNEL_ID);
 
-        const gameUrl = `https://www.roblox.com/games/${placeId}`;
+        if (!channel) {
+            return res.send("Channel not found");
+        }
 
-        await channel.send({
-            content: `🎮 ${name}\n${gameUrl}`
-        });
+        await channel.send("🟢 TEST MESSAGE WORKS");
 
-        console.log("✅ Sent:", name);
-
-        res.json({ ok: true });
-
+        res.send("Sent!");
     } catch (err) {
-        console.log("❌ Error:", err.message);
-        res.json({ ok: false });
+        console.log("❌ Send error:", err.message);
+        res.send("Error: " + err.message);
     }
 });
 
-// 🚀 START
-app.listen(process.env.PORT || 3000, () => {
+// 🚀 SERVER
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
     console.log("🚀 Server running");
 });
-
-client.login(TOKEN);
