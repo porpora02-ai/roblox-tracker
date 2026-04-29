@@ -1,55 +1,117 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 
 // 🔴 CONFIG
-const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GG6SeC.OQYEecbcHfqO-aEyZUL6fdUoVplXPq2-wxZK_c";
+const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GzI1gq.WzreDRWlx8GYfxWVG_x2NJybLZjASi3Q0wNnyg";
 const CHANNEL_ID = "1498019171789705279";
 
-// 🤖 BOT
+const FILE = "./games.json";
+
+// 📦 LOAD SAVED DATA
+let games = {};
+if (fs.existsSync(FILE)) {
+    games = JSON.parse(fs.readFileSync(FILE));
+}
+
+function save() {
+    fs.writeFileSync(FILE, JSON.stringify(games, null, 2));
+}
+
+// 🤖 DISCORD BOT
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-let botReady = false;
+let ready = false;
 
 client.once("ready", () => {
-    botReady = true;
-    console.log("✅ Bot ready as:", client.user.tag);
+    ready = true;
+    console.log("✅ Bot ready:", client.user.tag);
 });
 
-// 🚀 LOGIN
 client.login(TOKEN).catch(err => {
-    console.log("❌ Login error:", err.message);
+    console.log("❌ Login failed:", err.message);
 });
 
-// 📡 TEST ROUTE (IMPORTANT)
-app.get("/test", async (req, res) => {
-    if (!botReady) {
-        return res.send("Bot not ready yet");
-    }
+// 📡 ROOT
+app.get("/", (req, res) => {
+    res.send("Tracker running");
+});
 
+// 📡 MAIN REPORT SYSTEM
+app.post("/report", async (req, res) => {
     try {
+        if (!ready) {
+            return res.json({ ok: false, error: "bot not ready" });
+        }
+
+        const { placeId, name, players } = req.body;
+
+        if (!placeId) {
+            return res.json({ ok: false });
+        }
+
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         if (!channel) {
-            return res.send("Channel not found");
+            return res.json({ ok: false, error: "channel missing" });
         }
 
-        await channel.send("🟢 TEST MESSAGE WORKS");
+        const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        res.send("Sent!");
+        // 🔥 IF GAME NOT REGISTERED → CREATE MESSAGE
+        if (!games[placeId]) {
+            const msg = await channel.send({
+                content:
+`🎮 Roblox Server Update
+📛 Game: ${name || "Unknown"}
+👥 Players: ${players || 0}
+🔗 Join Game: ${gameUrl}
+🆔 PlaceId: ${placeId}`
+            });
+
+            games[placeId] = {
+                messageId: msg.id
+            };
+
+            save();
+
+            console.log("✅ Registered game:", placeId);
+        } 
+        // 🔄 IF EXISTS → EDIT MESSAGE
+        else {
+            try {
+                const msg = await channel.messages.fetch(games[placeId].messageId);
+
+                await msg.edit(
+`🎮 Roblox Server Update
+📛 Game: ${name || "Unknown"}
+👥 Players: ${players || 0}
+🔗 Join Game: ${gameUrl}
+🆔 PlaceId: ${placeId}`
+                );
+
+                console.log("🔄 Updated game:", placeId);
+            } catch (e) {
+                console.log("❌ Failed to edit message:", e.message);
+            }
+        }
+
+        res.json({ ok: true });
+
     } catch (err) {
-        console.log("❌ Send error:", err.message);
-        res.send("Error: " + err.message);
+        console.log("❌ ERROR:", err.message);
+        res.json({ ok: false });
     }
 });
 
-// 🚀 SERVER
+// 🚀 START SERVER
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🚀 Server running");
+    console.log("🚀 Running on port", PORT);
 });
