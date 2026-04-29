@@ -9,7 +9,7 @@ app.use(express.json());
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// 📦 DATABASE (game registry)
+// 📦 DATABASE
 const FILE = "./games.json";
 
 let games = {};
@@ -42,54 +42,74 @@ app.get("/", (req, res) => {
     res.send("OPTION C TRACKER RUNNING");
 });
 
-// 📡 MAIN TRACKING ENDPOINT
+// 📡 MAIN TRACKER
 app.post("/report", async (req, res) => {
     try {
         if (!ready) return res.json({ ok: false, error: "bot not ready" });
 
-        const { placeId, name, players } = req.body;
+        let { placeId, name, players } = req.body;
 
         if (!placeId) return res.json({ ok: false });
+
+        players = Number(players) || 0;
 
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        // 🧠 IF GAME NOT REGISTERED → CREATE MESSAGE ONCE
+        // 🧠 CREATE ENTRY ON FIRST DETECTION ONLY
         if (!games[placeId]) {
-            const msg = await channel.send(
+            games[placeId] = {
+                messageId: null,
+                name: name || "Unknown Game",
+                lastPlayers: -1
+            };
+        }
+
+        // 🧠 LOCK GAME NAME (NEVER OVERWRITE AFTER FIRST GOOD VALUE)
+        if (name && games[placeId].name === "Unknown Game") {
+            games[placeId].name = name;
+        }
+
+        const gameName = games[placeId].name;
+
+        let message;
+
+        // 🆕 FIRST TIME → CREATE MESSAGE
+        if (!games[placeId].messageId) {
+            message = await channel.send(
 `🎮 Roblox Server Update
-📛 Game: ${name || "Unknown"}
-👥 Players: ${players || 0}
+📛 Game: ${gameName}
+👥 Players: ${players}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
             );
 
-            games[placeId] = {
-                messageId: msg.id,
-                lastPlayers: players || 0
-            };
+            games[placeId].messageId = message.id;
+            games[placeId].lastPlayers = players;
 
             save();
 
-            console.log("🆕 Registered game:", placeId);
-        }
+            console.log("🆕 Registered:", placeId);
+        } else {
+            // 🔄 ALWAYS EDIT SAME MESSAGE
+            if (games[placeId].lastPlayers !== players) {
+                const msg = await channel.messages.fetch(games[placeId].messageId);
 
-        // 🔄 ALWAYS UPDATE SAME MESSAGE (NO DUPLICATES EVER)
-        const msg = await channel.messages.fetch(games[placeId].messageId);
-
-        await msg.edit(
+                await msg.edit(
 `🎮 Roblox Server Update
-📛 Game: ${name || "Unknown"}
-👥 Players: ${players || 0}
+📛 Game: ${gameName}
+👥 Players: ${players}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
-        );
+                );
 
-        games[placeId].lastPlayers = players || 0;
-        save();
+                games[placeId].lastPlayers = players;
+                save();
 
-        console.log("🔄 Updated:", placeId, "Players:", players);
+                console.log("🔄 Updated:", placeId, "Players:", players);
+            }
+        }
 
         res.json({ ok: true });
 
@@ -99,7 +119,7 @@ app.post("/report", async (req, res) => {
     }
 });
 
-// 🚀 START SERVER
+// 🚀 START
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
