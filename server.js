@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // 🔴 CONFIG
-const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GzI1gq.WzreDRWlx8GYfxWVG_x2NJybLZjASi3Q0wNnyg";
+const TOKEN = process.env.MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GjSRiw.-QbvdPJ2A4eCxFW17hAAYmUu7RWqXIjHXy-fC0;
 const CHANNEL_ID = "1498019172737876240";
 
 const FILE = "./games.json";
