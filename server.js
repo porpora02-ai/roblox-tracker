@@ -7,11 +7,11 @@ app.use(express.json());
 
 // 🔴 CONFIG
 const TOKEN = "MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GzI1gq.WzreDRWlx8GYfxWVG_x2NJybLZjASi3Q0wNnyg";
-const CHANNEL_ID = "1498019171789705279";
+const CHANNEL_ID = "1498019172737876240";
 
 const FILE = "./games.json";
 
-// 📦 LOAD SAVED DATA
+// load saved
 let games = {};
 if (fs.existsSync(FILE)) {
     games = JSON.parse(fs.readFileSync(FILE));
@@ -21,97 +21,105 @@ function save() {
     fs.writeFileSync(FILE, JSON.stringify(games, null, 2));
 }
 
-// 🤖 DISCORD BOT
+// 🤖 BOT
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
 let ready = false;
 
 client.once("ready", () => {
     ready = true;
-    console.log("✅ Bot ready:", client.user.tag);
+    console.log("✅ BOT READY:", client.user.tag);
 });
 
 client.login(TOKEN).catch(err => {
-    console.log("❌ Login failed:", err.message);
+    console.log("❌ LOGIN ERROR:", err.message);
 });
 
-// 📡 ROOT
+// 🚀 ROOT
 app.get("/", (req, res) => {
-    res.send("Tracker running");
+    res.send("RUNNING");
 });
 
-// 📡 MAIN REPORT SYSTEM
-app.post("/report", async (req, res) => {
+// 🧪 FORCE TEST ROUTE
+app.get("/force", async (req, res) => {
     try {
-        if (!ready) {
-            return res.json({ ok: false, error: "bot not ready" });
-        }
+        const channel = await client.channels.fetch(CHANNEL_ID);
+        await channel.send("🟢 FORCE TEST WORKED");
+        res.send("sent");
+    } catch (e) {
+        console.log("❌ FORCE ERROR:", e.message);
+        res.send("error: " + e.message);
+    }
+});
 
+// 📡 REPORT
+app.post("/report", async (req, res) => {
+    console.log("📩 REQUEST:", req.body);
+
+    if (!ready) {
+        console.log("❌ BOT NOT READY");
+        return res.json({ ok: false, error: "bot not ready" });
+    }
+
+    try {
         const { placeId, name, players } = req.body;
 
         if (!placeId) {
+            console.log("❌ NO PLACEID");
             return res.json({ ok: false });
         }
 
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         if (!channel) {
-            return res.json({ ok: false, error: "channel missing" });
+            console.log("❌ CHANNEL NOT FOUND");
+            return res.json({ ok: false });
         }
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        // 🔥 IF GAME NOT REGISTERED → CREATE MESSAGE
+        // NEW GAME
         if (!games[placeId]) {
-            const msg = await channel.send({
-                content:
+            const msg = await channel.send(
 `🎮 Roblox Server Update
 📛 Game: ${name || "Unknown"}
 👥 Players: ${players || 0}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
-            });
+            );
 
-            games[placeId] = {
-                messageId: msg.id
-            };
-
+            games[placeId] = { messageId: msg.id };
             save();
 
-            console.log("✅ Registered game:", placeId);
+            console.log("✅ REGISTERED:", placeId);
         } 
-        // 🔄 IF EXISTS → EDIT MESSAGE
+        // UPDATE
         else {
-            try {
-                const msg = await channel.messages.fetch(games[placeId].messageId);
+            const msg = await channel.messages.fetch(games[placeId].messageId);
 
-                await msg.edit(
+            await msg.edit(
 `🎮 Roblox Server Update
 📛 Game: ${name || "Unknown"}
 👥 Players: ${players || 0}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
-                );
+            );
 
-                console.log("🔄 Updated game:", placeId);
-            } catch (e) {
-                console.log("❌ Failed to edit message:", e.message);
-            }
+            console.log("🔄 UPDATED:", placeId);
         }
 
         res.json({ ok: true });
 
-    } catch (err) {
-        console.log("❌ ERROR:", err.message);
-        res.json({ ok: false });
+    } catch (e) {
+        console.log("❌ ERROR:", e.message);
+        res.json({ ok: false, error: e.message });
     }
 });
 
-// 🚀 START SERVER
+// START
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log("🚀 Running on port", PORT);
+    console.log("🚀 SERVER RUNNING");
 });
