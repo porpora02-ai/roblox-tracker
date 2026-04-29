@@ -1,53 +1,48 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 
-// 🔴 USE ENV VARS (Render)
+// 🔴 ENV VARS (RENDER)
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-console.log("TOKEN EXISTS:", !!TOKEN);
-console.log("CHANNEL EXISTS:", !!CHANNEL_ID);
+// 📦 SAVE FILE (stores message IDs)
+const FILE = "./games.json";
 
-// 🤖 BOT
+let games = {};
+if (fs.existsSync(FILE)) {
+    games = JSON.parse(fs.readFileSync(FILE));
+}
+
+function save() {
+    fs.writeFileSync(FILE, JSON.stringify(games, null, 2));
+}
+
+// 🤖 DISCORD BOT
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-client.on("ready", () => {
-    console.log("✅ BOT ONLINE:", client.user.tag);
+let ready = false;
+
+client.once("ready", () => {
+    ready = true;
+    console.log("✅ Bot online:", client.user.tag);
 });
 
-client.on("error", err => {
-    console.log("❌ CLIENT ERROR:", err.message);
+client.login(TOKEN).catch(err => {
+    console.log("❌ Login error:", err.message);
 });
 
-// LOGIN
-client.login(TOKEN)
-    .then(() => console.log("✅ LOGIN SUCCESS"))
-    .catch(err => console.log("❌ LOGIN FAILED:", err.message));
+// 🌐 TEST
+app.get("/", (req, res) => {
+    res.send("Tracker Running");
+});
 
-// 🌐 TEST ROUTE
-app.get("/test", async (req, res) => {
+// 📡 ROBLOX ENDPOINT
+app.post("/report", async (req, res) => {
     try {
-        const channel = await client.channels.fetch(CHANNEL_ID);
-
-        console.log("CHANNEL FETCHED");
-
-        await channel.send("🟢 DEBUG TEST MESSAGE");
-
-        console.log("MESSAGE SENT");
-
-        res.send("ok");
-    } catch (err) {
-        console.log("❌ SEND ERROR:", err);
-        res.send("error: " + err.message);
-    }
-});
-
-// 🚀 SERVER
-app.listen(process.env.PORT || 3000, () => {
-    console.log("🚀 SERVER RUNNING");
-});
+        if (!ready) return res.json({ ok
