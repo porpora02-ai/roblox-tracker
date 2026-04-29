@@ -1,12 +1,12 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
-const axios = require("axios");
 const fs = require("fs");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-// 🔴 ENV VARS
+// 🔴 ENV VARS (Render)
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
@@ -34,24 +34,35 @@ client.once("ready", () => {
     console.log("✅ Bot ready:", client.user.tag);
 });
 
-// ⚠️ SAFE LOGIN (PREVENT DEPLOY CRASH)
 if (TOKEN) {
     client.login(TOKEN).catch(err => {
         console.log("❌ Login failed:", err.message);
     });
 } else {
-    console.log("⚠️ TOKEN missing (bot disabled)");
+    console.log("⚠️ Missing TOKEN");
 }
 
-// 🔥 GET GAME NAME (SAFE)
+// 🔥 FIXED ROBLOX GAME NAME (PLACE → UNIVERSE → NAME)
 async function getGameName(placeId) {
     try {
-        const res = await axios.get(
-            `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${placeId}`
+        // STEP 1: placeId → universeId
+        const universeRes = await axios.get(
+            `https://apis.roblox.com/universes/v1/places/${placeId}/universe`
         );
 
-        return res.data?.[0]?.name || "Unknown Game";
-    } catch {
+        const universeId = universeRes.data?.universeId;
+
+        if (!universeId) return "Unknown Game";
+
+        // STEP 2: universeId → game name
+        const gameRes = await axios.get(
+            `https://games.roblox.com/v1/games?universeIds=${universeId}`
+        );
+
+        return gameRes.data?.data?.[0]?.name || "Unknown Game";
+
+    } catch (err) {
+        console.log("❌ Name fetch error:", err.message);
         return "Unknown Game";
     }
 }
@@ -61,7 +72,7 @@ app.get("/", (req, res) => {
     res.send("TRACKER RUNNING");
 });
 
-// 📡 REPORT
+// 📡 MAIN TRACKER (OPTION C SYSTEM)
 app.post("/report", async (req, res) => {
     try {
         if (!ready) return res.json({ ok: false });
@@ -72,9 +83,11 @@ app.post("/report", async (req, res) => {
 
         const channel = await client.channels.fetch(CHANNEL_ID);
 
-        const gameName = await getGameName(placeId);
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
+        const gameName = await getGameName(placeId);
+
+        // 🧠 CREATE GAME ENTRY ONCE
         if (!games[placeId]) {
             const msg = await channel.send(
 `🎮 Roblox Server Update
@@ -84,19 +97,31 @@ app.post("/report", async (req, res) => {
 🆔 PlaceId: ${placeId}`
             );
 
-            games[placeId] = { messageId: msg.id };
-            save();
-        } else {
-            const msg = await channel.messages.fetch(games[placeId].messageId);
+            games[placeId] = {
+                messageId: msg.id,
+                lastPlayers: -1
+            };
 
-            await msg.edit(
+            save();
+
+            console.log("🆕 Registered:", placeId);
+        }
+
+        // 🔄 ALWAYS EDIT SAME MESSAGE
+        const msg = await channel.messages.fetch(games[placeId].messageId);
+
+        await msg.edit(
 `🎮 Roblox Server Update
 📛 Game: ${gameName}
 👥 Players: ${players}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
-            );
-        }
+        );
+
+        games[placeId].lastPlayers = players;
+        save();
+
+        console.log("🔄 Updated:", placeId, "Players:", players);
 
         res.json({ ok: true });
 
@@ -106,7 +131,7 @@ app.post("/report", async (req, res) => {
     }
 });
 
-// 🚀 START
+// 🚀 START SERVER
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
