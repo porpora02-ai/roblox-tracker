@@ -1,12 +1,12 @@
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
-const fs = require("fs");
 const axios = require("axios");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 
-// 🔴 ENV VARS (Render)
+// 🔴 ENV VARS
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
@@ -34,9 +34,16 @@ client.once("ready", () => {
     console.log("✅ Bot ready:", client.user.tag);
 });
 
-client.login(TOKEN);
+// ⚠️ SAFE LOGIN (PREVENT DEPLOY CRASH)
+if (TOKEN) {
+    client.login(TOKEN).catch(err => {
+        console.log("❌ Login failed:", err.message);
+    });
+} else {
+    console.log("⚠️ TOKEN missing (bot disabled)");
+}
 
-// 🔥 REAL ROBLOX GAME NAME (FIXED)
+// 🔥 GET GAME NAME (SAFE)
 async function getGameName(placeId) {
     try {
         const res = await axios.get(
@@ -44,8 +51,7 @@ async function getGameName(placeId) {
         );
 
         return res.data?.[0]?.name || "Unknown Game";
-    } catch (err) {
-        console.log("❌ Name fetch failed:", err.message);
+    } catch {
         return "Unknown Game";
     }
 }
@@ -55,10 +61,10 @@ app.get("/", (req, res) => {
     res.send("TRACKER RUNNING");
 });
 
-// 📡 MAIN TRACKER
+// 📡 REPORT
 app.post("/report", async (req, res) => {
     try {
-        if (!ready) return res.json({ ok: false, error: "bot not ready" });
+        if (!ready) return res.json({ ok: false });
 
         const { placeId, players } = req.body;
 
@@ -66,12 +72,9 @@ app.post("/report", async (req, res) => {
 
         const channel = await client.channels.fetch(CHANNEL_ID);
 
+        const gameName = await getGameName(placeId);
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
 
-        // 🔥 ALWAYS GET REAL NAME (FIXES YOUR ISSUE)
-        const gameName = await getGameName(placeId);
-
-        // 🧠 REGISTER GAME IF NEW
         if (!games[placeId]) {
             const msg = await channel.send(
 `🎮 Roblox Server Update
@@ -81,41 +84,29 @@ app.post("/report", async (req, res) => {
 🆔 PlaceId: ${placeId}`
             );
 
-            games[placeId] = {
-                messageId: msg.id,
-                lastPlayers: -1
-            };
-
+            games[placeId] = { messageId: msg.id };
             save();
+        } else {
+            const msg = await channel.messages.fetch(games[placeId].messageId);
 
-            console.log("🆕 Registered:", placeId);
-        }
-
-        // 🔄 EDIT SAME MESSAGE ALWAYS
-        const msg = await channel.messages.fetch(games[placeId].messageId);
-
-        await msg.edit(
+            await msg.edit(
 `🎮 Roblox Server Update
 📛 Game: ${gameName}
 👥 Players: ${players}
 🔗 Join Game: ${gameUrl}
 🆔 PlaceId: ${placeId}`
-        );
-
-        games[placeId].lastPlayers = players;
-        save();
-
-        console.log("🔄 Updated:", placeId, "Players:", players);
+            );
+        }
 
         res.json({ ok: true });
 
     } catch (err) {
         console.log("❌ ERROR:", err.message);
-        res.json({ ok: false, error: err.message });
+        res.json({ ok: false });
     }
 });
 
-// 🚀 START SERVER
+// 🚀 START
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
