@@ -22,6 +22,9 @@ function save() {
     fs.writeFileSync(FILE, JSON.stringify(games, null, 2));
 }
 
+// 🔥 GAME NAME CACHE (IMPORTANT FIX)
+const nameCache = {};
+
 // 🤖 DISCORD BOT
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
@@ -42,28 +45,30 @@ if (TOKEN) {
     console.log("⚠️ Missing TOKEN");
 }
 
-// 🔥 FIXED ROBLOX GAME NAME (PLACE → UNIVERSE → NAME)
+// 🔥 FIXED GAME NAME (PLACE → UNIVERSE → NAME + CACHE)
 async function getGameName(placeId) {
     try {
-        // STEP 1: placeId → universeId
+        if (nameCache[placeId]) return nameCache[placeId];
+
         const universeRes = await axios.get(
             `https://apis.roblox.com/universes/v1/places/${placeId}/universe`
         );
 
         const universeId = universeRes.data?.universeId;
-
         if (!universeId) return "Unknown Game";
 
-        // STEP 2: universeId → game name
         const gameRes = await axios.get(
             `https://games.roblox.com/v1/games?universeIds=${universeId}`
         );
 
-        return gameRes.data?.data?.[0]?.name || "Unknown Game";
+        const name = gameRes.data?.data?.[0]?.name || "Unknown Game";
+
+        nameCache[placeId] = name; // lock forever
+
+        return name;
 
     } catch (err) {
-        console.log("❌ Name fetch error:", err.message);
-        return "Unknown Game";
+        return nameCache[placeId] || "Unknown Game";
     }
 }
 
@@ -87,7 +92,7 @@ app.post("/report", async (req, res) => {
 
         const gameName = await getGameName(placeId);
 
-        // 🧠 CREATE GAME ENTRY ONCE
+        // 🧠 FIRST TIME REGISTER
         if (!games[placeId]) {
             const msg = await channel.send(
 `🎮 Roblox Server Update
