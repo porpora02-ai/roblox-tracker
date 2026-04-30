@@ -22,7 +22,10 @@ function save() {
     fs.writeFileSync(FILE, JSON.stringify(games, null, 2));
 }
 
-// 🔥 GAME NAME CACHE (IMPORTANT FIX)
+// 🔒 LOCKS (FIX DUPLICATE MESSAGES)
+const creating = {};
+
+// 🧠 NAME CACHE (FIX UNKNOWN GAME ISSUE)
 const nameCache = {};
 
 // 🤖 DISCORD BOT
@@ -41,34 +44,45 @@ if (TOKEN) {
     client.login(TOKEN).catch(err => {
         console.log("❌ Login failed:", err.message);
     });
-} else {
-    console.log("⚠️ Missing TOKEN");
 }
 
-// 🔥 FIXED GAME NAME (PLACE → UNIVERSE → NAME + CACHE)
+// 🔥 GET GAME NAME (ROBLOX UNIVERSAL FIX)
 async function getGameName(placeId) {
     try {
         if (nameCache[placeId]) return nameCache[placeId];
 
-        const universeRes = await axios.get(
+        const uni = await axios.get(
             `https://apis.roblox.com/universes/v1/places/${placeId}/universe`
         );
 
-        const universeId = universeRes.data?.universeId;
+        const universeId = uni.data?.universeId;
         if (!universeId) return "Unknown Game";
 
-        const gameRes = await axios.get(
+        const game = await axios.get(
             `https://games.roblox.com/v1/games?universeIds=${universeId}`
         );
 
-        const name = gameRes.data?.data?.[0]?.name || "Unknown Game";
+        const name = game.data?.data?.[0]?.name || "Unknown Game";
 
-        nameCache[placeId] = name; // lock forever
-
+        nameCache[placeId] = name;
         return name;
 
-    } catch (err) {
+    } catch {
         return nameCache[placeId] || "Unknown Game";
+    }
+}
+
+// 🖼️ GET GAME ICON
+async function getGameIcon(placeId) {
+    try {
+        const res = await axios.get(
+            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png&isCircular=false`
+        );
+
+        return res.data?.data?.[0]?.imageUrl || null;
+
+    } catch {
+        return null;
     }
 }
 
@@ -77,30 +91,42 @@ app.get("/", (req, res) => {
     res.send("TRACKER RUNNING");
 });
 
-// 📡 MAIN TRACKER (OPTION C SYSTEM)
+// 📡 MAIN TRACKER
 app.post("/report", async (req, res) => {
     try {
         if (!ready) return res.json({ ok: false });
 
         const { placeId, players } = req.body;
-
         if (!placeId) return res.json({ ok: false });
 
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
-
         const gameName = await getGameName(placeId);
+        const icon = await getGameIcon(placeId);
 
-        // 🧠 FIRST TIME REGISTER
+        // 🧠 FIRST TIME REGISTER (LOCKED TO PREVENT DUPES)
         if (!games[placeId]) {
-            const msg = await channel.send(
-`🎮 Roblox Server Update
-📛 Game: ${gameName}
-👥 Players: ${players}
-🔗 Join Game: ${gameUrl}
-🆔 PlaceId: ${placeId}`
-            );
+
+            if (creating[placeId]) {
+                return res.json({ ok: true, skipped: "creating" });
+            }
+
+            creating[placeId] = true;
+
+            const msg = await channel.send({
+                embeds: [{
+                    title: gameName,
+                    color: 0x00ffcc,
+                    thumbnail: icon ? { url: icon } : null,
+                    image: icon ? { url: icon } : null,
+                    fields: [
+                        { name: "👥 Players", value: String(players), inline: true },
+                        { name: "🆔 Place ID", value: String(placeId), inline: true },
+                        { name: "🔗 Join", value: gameUrl }
+                    ]
+                }]
+            });
 
             games[placeId] = {
                 messageId: msg.id,
@@ -108,25 +134,32 @@ app.post("/report", async (req, res) => {
             };
 
             save();
+            creating[placeId] = false;
 
             console.log("🆕 Registered:", placeId);
         }
 
-        // 🔄 ALWAYS EDIT SAME MESSAGE
+        // 🔄 UPDATE EXISTING MESSAGE
         const msg = await channel.messages.fetch(games[placeId].messageId);
 
-        await msg.edit(
-`🎮 Roblox Server Update
-📛 Game: ${gameName}
-👥 Players: ${players}
-🔗 Join Game: ${gameUrl}
-🆔 PlaceId: ${placeId}`
-        );
+        await msg.edit({
+            embeds: [{
+                title: gameName,
+                color: 0x00ffcc,
+                thumbnail: icon ? { url: icon } : null,
+                image: icon ? { url: icon } : null,
+                fields: [
+                    { name: "👥 Players", value: String(players), inline: true },
+                    { name: "🆔 Place ID", value: String(placeId), inline: true },
+                    { name: "🔗 Join", value: gameUrl }
+                ]
+            }]
+        });
 
         games[placeId].lastPlayers = players;
         save();
 
-        console.log("🔄 Updated:", placeId, "Players:", players);
+        console.log("🔄 Updated:", placeId, players);
 
         res.json({ ok: true });
 
