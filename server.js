@@ -6,28 +6,24 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-const TOKEN = process.env.MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GXzTbk.xNHNOXeV5tjIXjT4C_uty4u3Tug4P4oKCU-DQU;
-const CHANNEL_ID = process.env.1498019171789705279;
+const TOKEN = process.env.TOKEN;
+const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const FILE = "./games.json";
 
-// ===== SAFE LOAD =====
+// ===== LOAD / SAVE =====
 function loadGames() {
-    try {
-        if (fs.existsSync(FILE)) {
-            return JSON.parse(fs.readFileSync(FILE));
-        }
-    } catch {}
+    if (fs.existsSync(FILE)) {
+        return JSON.parse(fs.readFileSync(FILE));
+    }
     return {};
 }
 
 function saveGames(data) {
-    try {
-        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
-    } catch {}
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-// ===== MEMORY =====
+// ===== LOCKS + CACHE =====
 const creating = {};
 const nameCache = {};
 let lastCommand = null;
@@ -41,15 +37,13 @@ let ready = false;
 
 client.once("ready", () => {
     ready = true;
-    console.log("✅ Bot ready");
+    console.log("✅ Bot ready:", client.user.tag);
 });
 
 if (TOKEN) {
-    client.login(TOKEN).catch(() => {
-        console.log("❌ Invalid token");
+    client.login(TOKEN).catch(err => {
+        console.log("❌ Login failed:", err.message);
     });
-} else {
-    console.log("⚠️ TOKEN missing");
 }
 
 // ===== NAME =====
@@ -69,9 +63,10 @@ async function getGameName(placeId) {
         );
 
         const name = game.data?.data?.[0]?.name || "Unknown Game";
-        nameCache[placeId] = name;
 
+        nameCache[placeId] = name;
         return name;
+
     } catch {
         return nameCache[placeId] || "Unknown Game";
     }
@@ -89,7 +84,7 @@ async function getGameIcon(placeId) {
     }
 }
 
-// ===== SAFE MESSAGE =====
+// ===== SAFE MESSAGE FETCH =====
 async function getMessage(channel, id) {
     try {
         return await channel.messages.fetch(id);
@@ -114,15 +109,19 @@ app.post("/report", async (req, res) => {
         const gameName = await getGameName(placeId);
         const icon = await getGameIcon(placeId);
 
+        let existing = games[placeId];
         let msg = null;
 
-        if (games[placeId]?.messageId) {
-            msg = await getMessage(channel, games[placeId].messageId);
+        if (existing?.messageId) {
+            msg = await getMessage(channel, existing.messageId);
         }
 
-        // CREATE
+        // CREATE (ONLY IF NEEDED)
         if (!msg) {
-            if (creating[placeId]) return res.json({ ok: true });
+
+            if (creating[placeId]) {
+                return res.json({ ok: true });
+            }
 
             creating[placeId] = true;
 
@@ -145,6 +144,7 @@ app.post("/report", async (req, res) => {
 
             creating[placeId] = false;
 
+            console.log("🆕 Created:", placeId);
             return res.json({ ok: true });
         }
 
@@ -166,38 +166,37 @@ app.post("/report", async (req, res) => {
         res.json({ ok: true });
 
     } catch (err) {
-        console.log("❌ REPORT ERROR:", err.message);
+        console.log("❌ ERROR:", err.message);
         res.json({ ok: false });
     }
 });
 
-// ===== EXECUTE =====
+// ===== EXECUTE COMMAND (SAFE) =====
 app.post("/execute", (req, res) => {
-    try {
-        const { action, player } = req.body;
+    const { action, player } = req.body;
 
-        if (!action || !player) {
-            return res.json({ ok: false });
-        }
-
-        lastCommand = {
-            action,
-            player,
-            time: Date.now()
-        };
-
-        res.json({ ok: true });
-
-    } catch {
-        res.json({ ok: false });
+    if (!action || !player) {
+        return res.json({ ok: false });
     }
+
+    lastCommand = {
+        action,
+        player,
+        time: Date.now()
+    };
+
+    console.log("🎮 Command:", action, player);
+
+    res.json({ ok: true });
 });
 
-// ===== GET COMMAND =====
+// ===== ROBLOX FETCH COMMAND =====
 app.get("/getCommand", (req, res) => {
     if (!lastCommand) return res.json({});
+
     const cmd = lastCommand;
     lastCommand = null;
+
     res.json(cmd);
 });
 
