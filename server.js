@@ -11,19 +11,23 @@ const CHANNEL_ID = process.env.1498019171789705279;
 
 const FILE = "./games.json";
 
-// ===== LOAD / SAVE =====
+// ===== SAFE LOAD =====
 function loadGames() {
-    if (fs.existsSync(FILE)) {
-        return JSON.parse(fs.readFileSync(FILE));
-    }
+    try {
+        if (fs.existsSync(FILE)) {
+            return JSON.parse(fs.readFileSync(FILE));
+        }
+    } catch {}
     return {};
 }
 
 function saveGames(data) {
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    try {
+        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    } catch {}
 }
 
-// ===== LOCKS + CACHE =====
+// ===== MEMORY =====
 const creating = {};
 const nameCache = {};
 let lastCommand = null;
@@ -37,13 +41,15 @@ let ready = false;
 
 client.once("ready", () => {
     ready = true;
-    console.log("✅ Bot ready:", client.user.tag);
+    console.log("✅ Bot ready");
 });
 
 if (TOKEN) {
-    client.login(TOKEN).catch(err => {
-        console.log("❌ Login failed:", err.message);
+    client.login(TOKEN).catch(() => {
+        console.log("❌ Invalid token");
     });
+} else {
+    console.log("⚠️ TOKEN missing");
 }
 
 // ===== NAME =====
@@ -63,10 +69,9 @@ async function getGameName(placeId) {
         );
 
         const name = game.data?.data?.[0]?.name || "Unknown Game";
-
         nameCache[placeId] = name;
-        return name;
 
+        return name;
     } catch {
         return nameCache[placeId] || "Unknown Game";
     }
@@ -84,7 +89,7 @@ async function getGameIcon(placeId) {
     }
 }
 
-// ===== SAFE MESSAGE FETCH =====
+// ===== SAFE MESSAGE =====
 async function getMessage(channel, id) {
     try {
         return await channel.messages.fetch(id);
@@ -109,19 +114,15 @@ app.post("/report", async (req, res) => {
         const gameName = await getGameName(placeId);
         const icon = await getGameIcon(placeId);
 
-        let existing = games[placeId];
         let msg = null;
 
-        if (existing?.messageId) {
-            msg = await getMessage(channel, existing.messageId);
+        if (games[placeId]?.messageId) {
+            msg = await getMessage(channel, games[placeId].messageId);
         }
 
-        // CREATE (ONLY IF NEEDED)
+        // CREATE
         if (!msg) {
-
-            if (creating[placeId]) {
-                return res.json({ ok: true });
-            }
+            if (creating[placeId]) return res.json({ ok: true });
 
             creating[placeId] = true;
 
@@ -144,7 +145,6 @@ app.post("/report", async (req, res) => {
 
             creating[placeId] = false;
 
-            console.log("🆕 Created:", placeId);
             return res.json({ ok: true });
         }
 
@@ -166,37 +166,38 @@ app.post("/report", async (req, res) => {
         res.json({ ok: true });
 
     } catch (err) {
-        console.log("❌ ERROR:", err.message);
+        console.log("❌ REPORT ERROR:", err.message);
         res.json({ ok: false });
     }
 });
 
-// ===== EXECUTE COMMAND (SAFE) =====
+// ===== EXECUTE =====
 app.post("/execute", (req, res) => {
-    const { action, player } = req.body;
+    try {
+        const { action, player } = req.body;
 
-    if (!action || !player) {
-        return res.json({ ok: false });
+        if (!action || !player) {
+            return res.json({ ok: false });
+        }
+
+        lastCommand = {
+            action,
+            player,
+            time: Date.now()
+        };
+
+        res.json({ ok: true });
+
+    } catch {
+        res.json({ ok: false });
     }
-
-    lastCommand = {
-        action,
-        player,
-        time: Date.now()
-    };
-
-    console.log("🎮 Command:", action, player);
-
-    res.json({ ok: true });
 });
 
-// ===== ROBLOX FETCH COMMAND =====
+// ===== GET COMMAND =====
 app.get("/getCommand", (req, res) => {
     if (!lastCommand) return res.json({});
-
     const cmd = lastCommand;
     lastCommand = null;
-
     res.json(cmd);
 });
 
