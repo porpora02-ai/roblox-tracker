@@ -11,11 +11,11 @@ const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
-const PORT = process.env.PORT || 3000;
 
+// ================= TRACKER FILE =================
 const FILE = "./games.json";
 
-// ================= TRACKER STORAGE =================
+// ================= LOAD/SAVE =================
 function loadGames() {
     if (fs.existsSync(FILE)) return JSON.parse(fs.readFileSync(FILE));
     return {};
@@ -45,14 +45,14 @@ client.once("ready", () => {
     console.log("✅ Bot ready:", client.user.tag);
 });
 
-// ================= SLASH COMMAND REGISTER =================
+// ================= SLASH COMMAND =================
 const commands = [
     new SlashCommandBuilder()
         .setName("execute")
         .setDescription("Execute a command on a player")
         .addStringOption(opt =>
             opt.setName("command")
-                .setDescription("Command name (organator, kick, etc)")
+                .setDescription("organator")
                 .setRequired(true)
         )
         .addStringOption(opt =>
@@ -64,37 +64,47 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
+// register slash commands
 async function registerCommands() {
     try {
-        console.log("🔄 Registering slash commands...");
+        console.log("🔄 Registering commands...");
 
         await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
             { body: commands }
         );
 
-        console.log("✅ Slash commands registered");
+        console.log("✅ Commands registered");
     } catch (err) {
-        console.log("❌ Slash error:", err);
+        console.log("❌ Command error:", err);
     }
 }
 
-// ================= DISCORD INTERACTIONS =================
+// ================= HANDLE SLASH COMMAND =================
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === "execute") {
+
         const command = interaction.options.getString("command");
         const player = interaction.options.getString("player");
 
+        // ONLY allow organator (your requested command)
+        if (command.toLowerCase() !== "organator") {
+            return interaction.reply({
+                content: "❌ Unknown command. Only 'organator' is allowed.",
+                ephemeral: true
+            });
+        }
+
         lastCommand = {
-            action: command.toLowerCase(),
+            action: "organator",
             player,
             time: Date.now()
         };
 
-        await interaction.reply(
-            `✅ Queued: **${command} → ${player}**`
+        return interaction.reply(
+            `✅ Organator executed on **${player}**`
         );
     }
 });
@@ -116,8 +126,8 @@ async function getGameName(placeId) {
         );
 
         const name = game.data?.data?.[0]?.name || "Unknown Game";
-
         nameCache[placeId] = name;
+
         return name;
 
     } catch {
@@ -146,7 +156,6 @@ app.post("/report", async (req, res) => {
         if (!placeId) return res.json({ ok: false });
 
         let games = loadGames();
-
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
@@ -210,7 +219,7 @@ app.post("/report", async (req, res) => {
     }
 });
 
-// ================= ROBLOX FETCH COMMAND =================
+// ================= ROBLOX FETCH =================
 app.get("/getCommand", (req, res) => {
     if (!lastCommand) return res.json(null);
 
@@ -226,13 +235,11 @@ app.get("/", (req, res) => {
 });
 
 // ================= START =================
-app.listen(PORT, async () => {
-    console.log("🚀 Server running on port", PORT);
+app.listen(process.env.PORT || 3000, async () => {
+    console.log("🚀 Server running");
 
     if (TOKEN && CLIENT_ID && GUILD_ID) {
         await registerCommands();
         client.login(TOKEN);
-    } else {
-        console.log("⚠️ Missing Discord env vars");
     }
 });
