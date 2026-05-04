@@ -11,11 +11,9 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const FILE = "./games.json";
 
-// ===== LOAD / SAVE =====
+// ================= TRACKER STORAGE =================
 function loadGames() {
-    if (fs.existsSync(FILE)) {
-        return JSON.parse(fs.readFileSync(FILE));
-    }
+    if (fs.existsSync(FILE)) return JSON.parse(fs.readFileSync(FILE));
     return {};
 }
 
@@ -23,14 +21,18 @@ function saveGames(data) {
     fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-// ===== LOCKS + CACHE =====
+// ================= STATE =================
 const creating = {};
 const nameCache = {};
 let lastCommand = null;
 
-// ===== DISCORD =====
+// ================= DISCORD BOT =================
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
 let ready = false;
@@ -41,12 +43,10 @@ client.once("ready", () => {
 });
 
 if (TOKEN) {
-    client.login(TOKEN).catch(err => {
-        console.log("❌ Login failed:", err.message);
-    });
+    client.login(TOKEN);
 }
 
-// ===== NAME =====
+// ================= ROBLOX NAME =================
 async function getGameName(placeId) {
     try {
         if (nameCache[placeId]) return nameCache[placeId];
@@ -63,16 +63,15 @@ async function getGameName(placeId) {
         );
 
         const name = game.data?.data?.[0]?.name || "Unknown Game";
-
         nameCache[placeId] = name;
-        return name;
 
+        return name;
     } catch {
-        return nameCache[placeId] || "Unknown Game";
+        return "Unknown Game";
     }
 }
 
-// ===== ICON =====
+// ================= ROBLOX ICON =================
 async function getGameIcon(placeId) {
     try {
         const res = await axios.get(
@@ -84,16 +83,7 @@ async function getGameIcon(placeId) {
     }
 }
 
-// ===== SAFE MESSAGE FETCH =====
-async function getMessage(channel, id) {
-    try {
-        return await channel.messages.fetch(id);
-    } catch {
-        return null;
-    }
-}
-
-// ===== TRACKER =====
+// ================= TRACKER =================
 app.post("/report", async (req, res) => {
     try {
         if (!ready) return res.json({ ok: false });
@@ -102,7 +92,6 @@ app.post("/report", async (req, res) => {
         if (!placeId) return res.json({ ok: false });
 
         let games = loadGames();
-
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
@@ -113,27 +102,25 @@ app.post("/report", async (req, res) => {
         let msg = null;
 
         if (existing?.messageId) {
-            msg = await getMessage(channel, existing.messageId);
+            try {
+                msg = await channel.messages.fetch(existing.messageId);
+            } catch {}
         }
 
         // CREATE
         if (!msg) {
-
-            if (creating[placeId]) {
-                return res.json({ ok: true });
-            }
+            if (creating[placeId]) return res.json({ ok: true });
 
             creating[placeId] = true;
 
             const newMsg = await channel.send({
                 embeds: [{
                     title: gameName,
-                    color: 0x00ffcc,
+                    color: 0x8a2be2,
                     thumbnail: icon ? { url: icon } : null,
-                    image: icon ? { url: icon } : null,
                     fields: [
                         { name: "👥 Players", value: String(players), inline: true },
-                        { name: "🆔 Place ID", value: String(placeId), inline: true },
+                        { name: "🆔 PlaceId", value: String(placeId), inline: true },
                         { name: "🔗 Join", value: gameUrl }
                     ]
                 }]
@@ -143,7 +130,6 @@ app.post("/report", async (req, res) => {
             saveGames(games);
 
             creating[placeId] = false;
-
             return res.json({ ok: true });
         }
 
@@ -151,12 +137,11 @@ app.post("/report", async (req, res) => {
         await msg.edit({
             embeds: [{
                 title: gameName,
-                color: 0x00ffcc,
+                color: 0x8a2be2,
                 thumbnail: icon ? { url: icon } : null,
-                image: icon ? { url: icon } : null,
                 fields: [
                     { name: "👥 Players", value: String(players), inline: true },
-                    { name: "🆔 Place ID", value: String(placeId), inline: true },
+                    { name: "🆔 PlaceId", value: String(placeId), inline: true },
                     { name: "🔗 Join", value: gameUrl }
                 ]
             }]
@@ -164,61 +149,47 @@ app.post("/report", async (req, res) => {
 
         res.json({ ok: true });
 
-    } catch (err) {
-        console.log("❌ ERROR:", err.message);
+    } catch (e) {
+        console.log(e);
         res.json({ ok: false });
     }
 });
 
 
-// ======================================================
-// ⚡ ADDON STARTS HERE (COMMAND SYSTEM)
-// ======================================================
-
-
-// ===== DISCORD EXECUTE FLOW =====
+// =====================================================
+// 💜 COMMAND SYSTEM (DISCORD /execute)
+// =====================================================
 client.on("messageCreate", async (msg) => {
     if (!ready) return;
     if (msg.author.bot) return;
     if (msg.channel.id !== CHANNEL_ID) return;
 
-    if (msg.content !== "/execute") return;
+    // /execute Organator RavoxRBLX
+    if (msg.content.startsWith("/execute")) {
 
-    const filter = m => m.author.id === msg.author.id;
+        const args = msg.content.split(" ");
 
-    msg.reply("What command? (organizer)");
+        const action = args[1];
+        const player = args[2];
 
-    const cmdCollected = await msg.channel.awaitMessages({
-        filter,
-        max: 1,
-        time: 30000
-    });
+        if (!action || !player) {
+            return msg.reply("Usage: /execute <command> <player>");
+        }
 
-    const command = cmdCollected.first()?.content;
-    if (!command) return msg.reply("Cancelled.");
+        lastCommand = {
+            action: action.toLowerCase(),
+            player,
+            time: Date.now()
+        };
 
-    msg.reply("Which player?");
-
-    const playerCollected = await msg.channel.awaitMessages({
-        filter,
-        max: 1,
-        time: 30000
-    });
-
-    const player = playerCollected.first()?.content;
-    if (!player) return msg.reply("Cancelled.");
-
-    lastCommand = {
-        action: command,
-        player: player,
-        time: Date.now()
-    };
-
-    msg.reply(`✅ Sent: ${command} → ${player}`);
+        msg.reply(`✅ Queued: ${action} → ${player}`);
+    }
 });
 
 
-// ===== ROBLOX FETCH COMMAND =====
+// =====================================================
+// 🎮 ROBLOX FETCH COMMAND
+// =====================================================
 app.get("/getCommand", (req, res) => {
     if (!lastCommand) return res.json(null);
 
@@ -229,13 +200,11 @@ app.get("/getCommand", (req, res) => {
 });
 
 
-// ===== ROOT =====
+// =====================================================
 app.get("/", (req, res) => {
-    res.send("RUNNING");
+    res.send("Roblox Tracker Running");
 });
 
-
-// ===== START =====
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
