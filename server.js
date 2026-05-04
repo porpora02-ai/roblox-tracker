@@ -1,13 +1,17 @@
 const express = require("express");
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
 const fs = require("fs");
 const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
+// ================= ENV =================
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const PORT = process.env.PORT || 3000;
 
 const FILE = "./games.json";
 
@@ -26,12 +30,11 @@ const creating = {};
 const nameCache = {};
 let lastCommand = null;
 
-// ================= DISCORD BOT =================
+// ================= DISCORD CLIENT =================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildMessages
     ]
 });
 
@@ -42,11 +45,61 @@ client.once("ready", () => {
     console.log("✅ Bot ready:", client.user.tag);
 });
 
-if (TOKEN) {
-    client.login(TOKEN);
+// ================= SLASH COMMAND REGISTER =================
+const commands = [
+    new SlashCommandBuilder()
+        .setName("execute")
+        .setDescription("Execute a command on a player")
+        .addStringOption(opt =>
+            opt.setName("command")
+                .setDescription("Command name (organator, kick, etc)")
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName("player")
+                .setDescription("Player name")
+                .setRequired(true)
+        )
+].map(c => c.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+async function registerCommands() {
+    try {
+        console.log("🔄 Registering slash commands...");
+
+        await rest.put(
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+            { body: commands }
+        );
+
+        console.log("✅ Slash commands registered");
+    } catch (err) {
+        console.log("❌ Slash error:", err);
+    }
 }
 
-// ================= ROBLOX NAME =================
+// ================= DISCORD INTERACTIONS =================
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === "execute") {
+        const command = interaction.options.getString("command");
+        const player = interaction.options.getString("player");
+
+        lastCommand = {
+            action: command.toLowerCase(),
+            player,
+            time: Date.now()
+        };
+
+        await interaction.reply(
+            `✅ Queued: **${command} → ${player}**`
+        );
+    }
+});
+
+// ================= GAME NAME =================
 async function getGameName(placeId) {
     try {
         if (nameCache[placeId]) return nameCache[placeId];
@@ -63,15 +116,16 @@ async function getGameName(placeId) {
         );
 
         const name = game.data?.data?.[0]?.name || "Unknown Game";
-        nameCache[placeId] = name;
 
+        nameCache[placeId] = name;
         return name;
+
     } catch {
         return "Unknown Game";
     }
 }
 
-// ================= ROBLOX ICON =================
+// ================= GAME ICON =================
 async function getGameIcon(placeId) {
     try {
         const res = await axios.get(
@@ -92,14 +146,15 @@ app.post("/report", async (req, res) => {
         if (!placeId) return res.json({ ok: false });
 
         let games = loadGames();
+
         const channel = await client.channels.fetch(CHANNEL_ID);
 
         const gameUrl = `https://www.roblox.com/games/${placeId}`;
         const gameName = await getGameName(placeId);
         const icon = await getGameIcon(placeId);
 
-        let existing = games[placeId];
         let msg = null;
+        let existing = games[placeId];
 
         if (existing?.messageId) {
             try {
@@ -155,41 +210,7 @@ app.post("/report", async (req, res) => {
     }
 });
 
-
-// =====================================================
-// 💜 COMMAND SYSTEM (DISCORD /execute)
-// =====================================================
-client.on("messageCreate", async (msg) => {
-    if (!ready) return;
-    if (msg.author.bot) return;
-    if (msg.channel.id !== CHANNEL_ID) return;
-
-    // /execute Organator RavoxRBLX
-    if (msg.content.startsWith("/execute")) {
-
-        const args = msg.content.split(" ");
-
-        const action = args[1];
-        const player = args[2];
-
-        if (!action || !player) {
-            return msg.reply("Usage: /execute <command> <player>");
-        }
-
-        lastCommand = {
-            action: action.toLowerCase(),
-            player,
-            time: Date.now()
-        };
-
-        msg.reply(`✅ Queued: ${action} → ${player}`);
-    }
-});
-
-
-// =====================================================
-// 🎮 ROBLOX FETCH COMMAND
-// =====================================================
+// ================= ROBLOX FETCH COMMAND =================
 app.get("/getCommand", (req, res) => {
     if (!lastCommand) return res.json(null);
 
@@ -199,14 +220,19 @@ app.get("/getCommand", (req, res) => {
     res.json(cmd);
 });
 
-
-// =====================================================
+// ================= ROOT =================
 app.get("/", (req, res) => {
     res.send("Roblox Tracker Running");
 });
 
-const PORT = process.env.PORT || 3000;
+// ================= START =================
+app.listen(PORT, async () => {
+    console.log("🚀 Server running on port", PORT);
 
-app.listen(PORT, () => {
-    console.log("🚀 Server running");
+    if (TOKEN && CLIENT_ID && GUILD_ID) {
+        await registerCommands();
+        client.login(TOKEN);
+    } else {
+        console.log("⚠️ Missing Discord env vars");
+    }
 });
