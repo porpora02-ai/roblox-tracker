@@ -116,7 +116,7 @@ app.post("/report", async (req, res) => {
             msg = await getMessage(channel, existing.messageId);
         }
 
-        // CREATE (ONLY IF NEEDED)
+        // CREATE
         if (!msg) {
 
             if (creating[placeId]) {
@@ -144,7 +144,6 @@ app.post("/report", async (req, res) => {
 
             creating[placeId] = false;
 
-            console.log("🆕 Created:", placeId);
             return res.json({ ok: true });
         }
 
@@ -171,28 +170,57 @@ app.post("/report", async (req, res) => {
     }
 });
 
-// ===== EXECUTE COMMAND (SAFE) =====
-app.post("/execute", (req, res) => {
-    const { action, player } = req.body;
 
-    if (!action || !player) {
-        return res.json({ ok: false });
-    }
+// ======================================================
+// ⚡ ADDON STARTS HERE (COMMAND SYSTEM)
+// ======================================================
+
+
+// ===== DISCORD EXECUTE FLOW =====
+client.on("messageCreate", async (msg) => {
+    if (!ready) return;
+    if (msg.author.bot) return;
+    if (msg.channel.id !== CHANNEL_ID) return;
+
+    if (msg.content !== "/execute") return;
+
+    const filter = m => m.author.id === msg.author.id;
+
+    msg.reply("What command? (organizer)");
+
+    const cmdCollected = await msg.channel.awaitMessages({
+        filter,
+        max: 1,
+        time: 30000
+    });
+
+    const command = cmdCollected.first()?.content;
+    if (!command) return msg.reply("Cancelled.");
+
+    msg.reply("Which player?");
+
+    const playerCollected = await msg.channel.awaitMessages({
+        filter,
+        max: 1,
+        time: 30000
+    });
+
+    const player = playerCollected.first()?.content;
+    if (!player) return msg.reply("Cancelled.");
 
     lastCommand = {
-        action,
-        player,
+        action: command,
+        player: player,
         time: Date.now()
     };
 
-    console.log("🎮 Command:", action, player);
-
-    res.json({ ok: true });
+    msg.reply(`✅ Sent: ${command} → ${player}`);
 });
+
 
 // ===== ROBLOX FETCH COMMAND =====
 app.get("/getCommand", (req, res) => {
-    if (!lastCommand) return res.json({});
+    if (!lastCommand) return res.json(null);
 
     const cmd = lastCommand;
     lastCommand = null;
@@ -200,10 +228,12 @@ app.get("/getCommand", (req, res) => {
     res.json(cmd);
 });
 
+
 // ===== ROOT =====
 app.get("/", (req, res) => {
     res.send("RUNNING");
 });
+
 
 // ===== START =====
 const PORT = process.env.PORT || 3000;
