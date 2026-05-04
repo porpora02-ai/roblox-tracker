@@ -6,18 +6,29 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-const TOKEN = process.env.TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID;
+const TOKEN = process.env.MTQ5ODA0NjY5MDE3Mzc3OTk2OA.GXzTbk.xNHNOXeV5tjIXjT4C_uty4u3Tug4P4oKCU-DQU;
+const CHANNEL_ID = process.env.1498019171789705279;
 
 const FILE = "./games.json";
 
-// 🔒 LOCKS
+// ===== LOAD / SAVE =====
+function loadGames() {
+    if (fs.existsSync(FILE)) {
+        return JSON.parse(fs.readFileSync(FILE));
+    }
+    return {};
+}
+
+function saveGames(data) {
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+}
+
+// ===== LOCKS + CACHE =====
 const creating = {};
-
-// 🧠 CACHE
 const nameCache = {};
+let lastCommand = null;
 
-// 🤖 DISCORD
+// ===== DISCORD =====
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
@@ -35,19 +46,7 @@ if (TOKEN) {
     });
 }
 
-// 🔄 ALWAYS LOAD FRESH DATA (FIX RENDER RESTART BUG)
-function loadGames() {
-    if (fs.existsSync(FILE)) {
-        return JSON.parse(fs.readFileSync(FILE));
-    }
-    return {};
-}
-
-function saveGames(data) {
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
-}
-
-// 🔥 NAME FIX
+// ===== NAME =====
 async function getGameName(placeId) {
     try {
         if (nameCache[placeId]) return nameCache[placeId];
@@ -73,7 +72,7 @@ async function getGameName(placeId) {
     }
 }
 
-// 🖼 ICON
+// ===== ICON =====
 async function getGameIcon(placeId) {
     try {
         const res = await axios.get(
@@ -85,7 +84,7 @@ async function getGameIcon(placeId) {
     }
 }
 
-// 🔍 SAFE MESSAGE FETCH
+// ===== SAFE MESSAGE FETCH =====
 async function getMessage(channel, id) {
     try {
         return await channel.messages.fetch(id);
@@ -94,10 +93,7 @@ async function getMessage(channel, id) {
     }
 }
 
-app.get("/", (req, res) => {
-    res.send("TRACKER RUNNING");
-});
-
+// ===== TRACKER =====
 app.post("/report", async (req, res) => {
     try {
         if (!ready) return res.json({ ok: false });
@@ -105,7 +101,6 @@ app.post("/report", async (req, res) => {
         const { placeId, players } = req.body;
         if (!placeId) return res.json({ ok: false });
 
-        // 🔄 reload fresh data every request
         let games = loadGames();
 
         const channel = await client.channels.fetch(CHANNEL_ID);
@@ -115,15 +110,13 @@ app.post("/report", async (req, res) => {
         const icon = await getGameIcon(placeId);
 
         let existing = games[placeId];
-
         let msg = null;
 
-        // 🔍 CHECK IF MESSAGE EXISTS
         if (existing?.messageId) {
             msg = await getMessage(channel, existing.messageId);
         }
 
-        // ❌ IF NO MESSAGE FOUND → CREATE ONE (ONLY ONCE)
+        // CREATE (ONLY IF NEEDED)
         if (!msg) {
 
             if (creating[placeId]) {
@@ -146,20 +139,16 @@ app.post("/report", async (req, res) => {
                 }]
             });
 
-            games[placeId] = {
-                messageId: newMsg.id
-            };
-
+            games[placeId] = { messageId: newMsg.id };
             saveGames(games);
 
             creating[placeId] = false;
 
             console.log("🆕 Created:", placeId);
-
             return res.json({ ok: true });
         }
 
-        // 🔄 UPDATE EXISTING MESSAGE
+        // UPDATE
         await msg.edit({
             embeds: [{
                 title: gameName,
@@ -174,8 +163,6 @@ app.post("/report", async (req, res) => {
             }]
         });
 
-        console.log("🔄 Updated:", placeId, players);
-
         res.json({ ok: true });
 
     } catch (err) {
@@ -184,8 +171,43 @@ app.post("/report", async (req, res) => {
     }
 });
 
+// ===== EXECUTE COMMAND (SAFE) =====
+app.post("/execute", (req, res) => {
+    const { action, player } = req.body;
+
+    if (!action || !player) {
+        return res.json({ ok: false });
+    }
+
+    lastCommand = {
+        action,
+        player,
+        time: Date.now()
+    };
+
+    console.log("🎮 Command:", action, player);
+
+    res.json({ ok: true });
+});
+
+// ===== ROBLOX FETCH COMMAND =====
+app.get("/getCommand", (req, res) => {
+    if (!lastCommand) return res.json({});
+
+    const cmd = lastCommand;
+    lastCommand = null;
+
+    res.json(cmd);
+});
+
+// ===== ROOT =====
+app.get("/", (req, res) => {
+    res.send("RUNNING");
+});
+
+// ===== START =====
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🚀 Running on port", PORT);
+    console.log("🚀 Server running");
 });
