@@ -1,23 +1,39 @@
 
 const glow = document.getElementById("cursorGlow");
 
-/* MOUSE GLOW */
 document.addEventListener("mousemove", e => {
     glow.style.left = e.clientX + "px";
     glow.style.top = e.clientY + "px";
 });
 
-/* GET URL PARAMS */
-function getParam(name) {
-    const url = new URL(window.location.href);
-    return url.searchParams.get(name);
-}
-
-/* ROUTING CHECK */
+/* STATE */
 let currentGame = null;
+let selectedPlayer = null;
+let selectedCommand = null;
 
 /* ===================== */
-/* LOAD GAMES PAGE */
+/* SWITCH VIEWS (NO PAGE RELOAD) */
+/* ===================== */
+
+function openExecute(game) {
+
+    currentGame = game;
+
+    document.getElementById("gameListPage").style.display = "none";
+    document.getElementById("gameExecPage").style.display = "block";
+
+    document.getElementById("selectedGameTitle").innerText = game.name;
+
+    loadPlayers();
+}
+
+function goBack() {
+    document.getElementById("gameListPage").style.display = "block";
+    document.getElementById("gameExecPage").style.display = "none";
+}
+
+/* ===================== */
+/* LOAD GAMES */
 /* ===================== */
 
 async function loadGames() {
@@ -50,7 +66,7 @@ async function loadGames() {
                         <button class="join">Join</button>
                     </a>
 
-                    <button class="join" onclick="openExecute('${game.placeId}', '${game.name}')">
+                    <button class="join" onclick='openExecute(${JSON.stringify(game)})'>
                         Execute
                     </button>
 
@@ -62,50 +78,15 @@ async function loadGames() {
 }
 
 /* ===================== */
-/* NAV TO EXECUTOR PAGE */
-/* ===================== */
-
-function openExecute(placeId, name) {
-    window.location.href = `/execute?id=${placeId}&name=${encodeURIComponent(name)}`;
-}
-
-/* ===================== */
-/* EXECUTOR PAGE LOAD */
-/* ===================== */
-
-async function loadExecutePage() {
-
-    const id = getParam("id");
-    const name = getParam("name");
-
-    if (!id) return;
-
-    document.getElementById("gameListPage").style.display = "none";
-    document.getElementById("gameExecPage").style.display = "block";
-
-    document.getElementById("selectedGameTitle").innerText = name;
-
-    currentGame = { placeId: id, name };
-
-    loadPlayers();
-}
-
-/* ===================== */
-/* BACK BUTTON */
-/* ===================== */
-
-function goBack() {
-    window.location.href = "/";
-}
-
-/* ===================== */
-/* PLAYERS (PLACEHOLDER FOR NOW) */
+/* PLAYERS */
 /* ===================== */
 
 function loadPlayers() {
+
     const list = document.getElementById("playerList");
     list.innerHTML = "";
 
+    // placeholder (later we connect real Roblox player system)
     list.innerHTML += `
         <div onclick="selectPlayer('1','Player1')" style="padding:10px;cursor:pointer">
             👤 Player1
@@ -116,9 +97,6 @@ function loadPlayers() {
 /* ===================== */
 /* SELECTORS */
 /* ===================== */
-
-let selectedPlayer = null;
-let selectedCommand = null;
 
 function selectPlayer(id, name) {
     selectedPlayer = id;
@@ -150,11 +128,10 @@ async function executeCommand() {
         })
     });
 
-    alert("Executed!");
+    alert("Command sent!");
 }
 
 /* INIT */
 document.getElementById("search").addEventListener("input", loadGames);
 setInterval(loadGames, 3000);
 loadGames();
-loadExecutePage();
