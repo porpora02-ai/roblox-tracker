@@ -22,7 +22,7 @@ function saveGames(data) {
 
 let games = loadGames();
 
-// CLEANUP DEAD GAMES (no updates in 20 seconds)
+/* CLEAN OLD SERVERS */
 setInterval(() => {
     const now = Date.now();
 
@@ -35,7 +35,7 @@ setInterval(() => {
     saveGames(games);
 }, 5000);
 
-// FILES
+/* WEBSITE FILES */
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -48,12 +48,12 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-// GET GAMES
+/* GET GAMES */
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-// UPDATE FROM ROBLOX
+/* ROBLOX UPDATE */
 app.post("/update", (req, res) => {
     const { placeId, name, players, icon, creator } = req.body;
 
@@ -70,9 +70,10 @@ app.post("/update", (req, res) => {
 
     saveGames(games);
 
+    console.log("UPDATED:", name, "Players:", players);
+
     res.json({ ok: true });
 });
 
-app.listen(process.env.PORT || 3000, () => {
-    console.log("LunarX running");
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("LunarX running"));
