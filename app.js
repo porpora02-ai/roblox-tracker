@@ -1,18 +1,19 @@
 const glow = document.getElementById("cursorGlow");
 
-/* mouse glow */
 document.addEventListener("mousemove", e => {
     glow.style.left = e.clientX + "px";
     glow.style.top = e.clientY + "px";
 });
 
-/* STATE */
 let allGames = [];
 let currentGame = null;
 let selectedPlayer = null;
 let selectedCommand = null;
 
-/* OPEN EXECUTOR */
+/* =========================
+   OPEN EXECUTOR
+========================= */
+
 function openExecute(placeId) {
 
     const game = allGames.find(
@@ -37,7 +38,10 @@ function goBack() {
     document.getElementById("gameExecPage").style.display = "none";
 }
 
-/* LOAD GAMES */
+/* =========================
+   LOAD GAMES
+========================= */
+
 async function loadGames() {
 
     const res = await fetch("/games");
@@ -54,10 +58,15 @@ async function loadGames() {
 
         if (search && !game.name.toLowerCase().includes(search)) return;
 
+        // 🔥 FIXED ICON (ROBLOX OFFICIAL API)
+        const icon = game.placeId
+            ? `https://thumbnails.roblox.com/v1/games/icons?universeIds=${game.placeId}&size=512x512&format=Png&isCircular=false`
+            : "https://placehold.co/600x400";
+
         container.innerHTML += `
             <div class="card">
 
-                <img src="${game.icon || "https://placehold.co/600x400"}">
+                <img src="${icon}">
 
                 <div class="info">
 
@@ -81,7 +90,10 @@ async function loadGames() {
     });
 }
 
-/* LOAD PLAYERS (REAL) */
+/* =========================
+   LOAD PLAYERS (FIXED)
+========================= */
+
 function loadPlayers() {
 
     const list = document.getElementById("playerList");
@@ -109,14 +121,13 @@ function loadPlayers() {
     });
 }
 
-/* SELECT PLAYER */
+/* SELECT */
 function selectPlayer(id, name) {
     selectedPlayer = id;
     document.getElementById("selectedPlayer").innerText =
         "Selected Player: " + name;
 }
 
-/* SELECT COMMAND */
 function selectCommand(cmd) {
     selectedCommand = cmd;
     document.getElementById("selectedCommand").innerText =
