@@ -13,42 +13,26 @@ function loadGames() {
             return JSON.parse(fs.readFileSync(FILE, "utf8"));
         }
     } catch (e) {
-        console.log(e);
+        console.log("load error:", e);
     }
-
     return {};
 }
 
 function saveGames(data) {
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    try {
+        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.log("save error:", e);
+    }
 }
 
 let games = loadGames();
 let commands = [];
 
-/* REMOVE DEAD GAMES */
-setInterval(() => {
+/* =========================
+   STATIC FILES
+========================= */
 
-    const now = Date.now();
-
-    for (const id in games) {
-
-        const g = games[id];
-
-        if (!g.players || g.players <= 0) {
-            delete games[id];
-        }
-
-        else if (now - g.updated > 15000) {
-            delete games[id];
-        }
-    }
-
-    saveGames(games);
-
-}, 5000);
-
-/* WEBSITE */
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -61,32 +45,38 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-/* GAMES */
+/* =========================
+   GAMES
+========================= */
+
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-/* UPDATE */
+/* =========================
+   UPDATE FROM ROBLOX
+========================= */
+
 app.post("/update", (req, res) => {
 
-    const {
-        placeId,
-        name,
-        players,
-        icon,
-        creator
-    } = req.body;
+    const data = req.body;
 
-    if (!placeId) {
+    if (!data.placeId) {
         return res.json({ ok: false });
     }
 
-    games[placeId] = {
-        placeId,
-        name,
-        players,
-        icon,
-        creator,
+    games[data.placeId] = {
+
+        placeId: data.placeId,
+        name: data.name || "Unknown",
+        players: data.players || 0,
+        creator: data.creator || "Unknown",
+
+        // 🔥 FIXED: always safe array
+        playerList: Array.isArray(data.playerList)
+            ? data.playerList
+            : [],
+
         updated: Date.now()
     };
 
@@ -95,14 +85,15 @@ app.post("/update", (req, res) => {
     res.json({ ok: true });
 });
 
-/* COMMANDS */
+/* =========================
+   COMMAND SYSTEM
+========================= */
+
 app.post("/command", (req, res) => {
 
-    const {
-        placeId,
-        cmd,
-        target
-    } = req.body;
+    const { placeId, cmd, target } = req.body;
+
+    if (!placeId || !cmd) return res.json({ ok: false });
 
     commands.push({
         placeId,
@@ -118,12 +109,23 @@ app.get("/commands", (req, res) => {
 
     const { placeId } = req.query;
 
-    const filtered = commands.filter(c => c.placeId == placeId);
+    const list = commands.filter(c => c.placeId == placeId);
 
     commands = commands.filter(c => c.placeId != placeId);
 
-    res.json(filtered);
+    res.json(list);
 });
+
+/* =========================
+   IMPORTANT (NO GAME DELETION)
+========================= */
+
+// 🔥 intentionally disabled so games NEVER disappear
+setInterval(() => {
+    // nothing here
+}, 60000);
+
+/* ========================= */
 
 const PORT = process.env.PORT || 3000;
 
