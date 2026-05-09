@@ -12,17 +12,20 @@ let selectedPlayer = null;
 let selectedCommand = null;
 
 /* ===================== */
-/* SWITCH VIEWS (NO PAGE RELOAD) */
+/* NAVIGATION (FIXED) */
 /* ===================== */
 
-function openExecute(game) {
+function openExecute(placeId, name) {
 
-    currentGame = game;
+    currentGame = {
+        placeId,
+        name
+    };
 
     document.getElementById("gameListPage").style.display = "none";
     document.getElementById("gameExecPage").style.display = "block";
 
-    document.getElementById("selectedGameTitle").innerText = game.name;
+    document.getElementById("selectedGameTitle").innerText = name;
 
     loadPlayers();
 }
@@ -66,7 +69,7 @@ async function loadGames() {
                         <button class="join">Join</button>
                     </a>
 
-                    <button class="join" onclick='openExecute(${JSON.stringify(game)})'>
+                    <button class="join" onclick="openExecute('${game.placeId}', '${game.name}')">
                         Execute
                     </button>
 
@@ -78,7 +81,7 @@ async function loadGames() {
 }
 
 /* ===================== */
-/* PLAYERS */
+/* PLAYERS (PLACEHOLDER) */
 /* ===================== */
 
 function loadPlayers() {
@@ -86,7 +89,6 @@ function loadPlayers() {
     const list = document.getElementById("playerList");
     list.innerHTML = "";
 
-    // placeholder (later we connect real Roblox player system)
     list.innerHTML += `
         <div onclick="selectPlayer('1','Player1')" style="padding:10px;cursor:pointer">
             👤 Player1
@@ -111,7 +113,7 @@ function selectCommand(cmd) {
 }
 
 /* ===================== */
-/* EXECUTE */
+/* EXECUTE COMMAND */
 /* ===================== */
 
 async function executeCommand() {
