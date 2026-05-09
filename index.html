@@ -1,31 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>LunarX</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+
+<!-- MOUSE GLOW -->
+<div id="cursorGlow"></div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <div class="logo">🌙 LunarX</div>
+
+    <div class="nav">
+        <button onclick="showPage('games')">Games</button>
+        <button onclick="showPage('executor')">Executor</button>
+    </div>
+</div>
+
+<!-- ===================== -->
+<!-- GAMES PAGE -->
+<!-- ===================== -->
+<div id="gamesPage">
+
+    <div class="main">
+
+        <h1>Available Games</h1>
+
+        <input id="search" placeholder="Search games...">
+
+        <div id="gamesContainer"></div>
+
+    </div>
+
+</div>
+
+<!-- ===================== -->
+<!-- EXECUTOR PAGE -->
+<!-- ===================== -->
 <div id="executorPage" style="display:none">
 
-<div class="main">
+    <div class="main">
 
-    <h1>Executor Panel</h1>
+        <h1>Executor Panel</h1>
 
-    <div class="executor">
+        <div class="executor">
 
-        <div class="leftPanel">
-            <h2>Players</h2>
-            <div id="playerList"></div>
-        </div>
+            <!-- PLAYERS -->
+            <div class="leftPanel">
+                <h2>Players</h2>
+                <div id="playerList"></div>
+            </div>
 
-        <div class="rightPanel">
-            <h2>Commands</h2>
+            <!-- COMMANDS -->
+            <div class="rightPanel">
+                <h2>Commands</h2>
 
-            <button onclick="selectCommand('R6')">R6</button>
-            <button onclick="selectCommand('KICK')">Kick</button>
-            <button onclick="selectCommand('FREEZE')">Freeze</button>
+                <button onclick="selectCommand('R6')">R6</button>
+                <button onclick="selectCommand('KICK')">Kick</button>
+                <button onclick="selectCommand('FREEZE')">Freeze</button>
 
-            <p id="selectedPlayer">Selected Player: none</p>
-            <p id="selectedCommand">Selected Command: none</p>
+                <hr style="margin:15px 0; opacity:0.2;">
 
-            <button class="join" onclick="executeCommand()">EXECUTE</button>
+                <p id="selectedPlayer">Selected Player: none</p>
+                <p id="selectedCommand">Selected Command: none</p>
+
+                <button class="join" onclick="executeCommand()">
+                    EXECUTE
+                </button>
+
+            </div>
+
         </div>
 
     </div>
 
 </div>
 
-</div>
+<!-- SCRIPTS -->
+<script src="/app.js"></script>
+
+</body>
+</html>
