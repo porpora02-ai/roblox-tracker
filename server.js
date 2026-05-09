@@ -1,111 +1,111 @@
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
 
-let currentGame = null;
-let selectedPlayer = null;
-let selectedCommand = null;
+const app = express();
+app.use(express.json());
 
-/* OPEN EXECUTOR */
-function openExecute(placeId, name) {
+const FILE = path.join(__dirname, "games.json");
 
-    currentGame = { placeId, name };
-
-    document.getElementById("gameListPage").style.display = "none";
-    document.getElementById("gameExecPage").style.display = "block";
-
-    document.getElementById("selectedGameTitle").innerText = name;
-
-    loadPlayers();
+/* SAFE LOAD */
+function loadGames() {
+    try {
+        if (fs.existsSync(FILE)) {
+            return JSON.parse(fs.readFileSync(FILE, "utf8"));
+        }
+    } catch (e) {
+        console.log("Load error:", e);
+    }
+    return {};
 }
 
-/* BACK */
-function goBack() {
-    document.getElementById("gameListPage").style.display = "block";
-    document.getElementById("gameExecPage").style.display = "none";
+function saveGames(data) {
+    try {
+        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.log("Save error:", e);
+    }
 }
 
-/* ===================== */
-/* PLAYERS (REAL LOOK UI) */
-/* ===================== */
+let games = loadGames();
+let commands = [];
 
-function loadPlayers() {
+/* STATIC FILES */
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
 
-    const list = document.getElementById("playerList");
-    list.innerHTML = "";
+app.get("/style.css", (req, res) => {
+    res.sendFile(path.join(__dirname, "style.css"));
+});
 
-    // REAL LOOKING MOCK (replace later with real Roblox API if you want)
-    const players = [
-        { name: "Player1", id: "1" },
-        { name: "Player2", id: "2" }
-    ];
+app.get("/app.js", (req, res) => {
+    res.sendFile(path.join(__dirname, "app.js"));
+});
 
-    players.forEach(p => {
+/* GAMES */
+app.get("/games", (req, res) => {
+    res.json(Object.values(games));
+});
 
-        const img = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.id}&width=150&height=150&format=png`;
+/* UPDATE FROM ROBLOX */
+app.post("/update", (req, res) => {
+    const { placeId, name, players, icon, creator } = req.body;
 
-        list.innerHTML += `
-            <div class="playerCard" onclick="selectPlayer('${p.id}','${p.name}')">
-                <img src="${img}">
-                <span>${p.name}</span>
-            </div>
-        `;
-    });
-}
+    if (!placeId) return res.json({ ok: false });
 
-/* ===================== */
-/* SELECT PLAYER */
-/* ===================== */
+    games[placeId] = {
+        placeId,
+        name,
+        players: players || 0,
+        icon: icon || "",
+        creator: creator || "Unknown",
+        updated: Date.now()
+    };
 
-function selectPlayer(id, name) {
-    selectedPlayer = id;
+    saveGames(games);
 
-    document.getElementById("selectedPlayer").innerText =
-        "Selected Player: " + name;
-}
+    res.json({ ok: true });
+});
 
-/* ===================== */
-/* SELECT COMMAND */
-/* ===================== */
+/* COMMANDS */
+app.post("/command", (req, res) => {
+    const { placeId, cmd, target } = req.body;
 
-function selectCommand(cmd) {
-    selectedCommand = cmd;
+    if (!placeId || !cmd) return res.json({ ok: false });
 
-    document.getElementById("selectedCommand").innerText =
-        "Selected Command: " + cmd;
-}
+    commands.push({ placeId, cmd, target });
 
-/* ===================== */
-/* HOVER FX (optional glow control) */
-/* ===================== */
+    res.json({ ok: true });
+});
 
-function hoverCmd(el) {
-    el.style.transform = "scale(1.05)";
-}
+app.get("/commands", (req, res) => {
+    const { placeId } = req.query;
 
-function unhoverCmd(el) {
-    el.style.transform = "scale(1)";
-}
+    const list = commands.filter(c => c.placeId == placeId);
 
-/* ===================== */
-/* EXECUTE */
-/* ===================== */
+    commands = commands.filter(c => c.placeId != placeId);
 
-async function executeCommand() {
+    res.json(list);
+});
 
-    if (!currentGame || !selectedPlayer || !selectedCommand) return;
+/* CLEANUP */
+setInterval(() => {
+    const now = Date.now();
 
-    await fetch("/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            placeId: currentGame.placeId,
-            cmd: selectedCommand,
-            target: selectedPlayer
-        })
-    });
+    for (const id in games) {
+        if (!games[id].players || games[id].players <= 0) {
+            delete games[id];
+        } else if (now - games[id].updated > 15000) {
+            delete games[id];
+        }
+    }
 
-    alert("Executed!");
-}
+    saveGames(games);
+}, 5000);
 
-/* INIT */
-document.getElementById("search")?.addEventListener("input", loadGames);
-setInterval(loadGames, 3000);
-loadGames();
+/* IMPORTANT RENDER FIX */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("LunarX running on", PORT);
+});
