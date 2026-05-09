@@ -3,10 +3,8 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-
 app.use(express.json());
 
-// ===== LOAD GAMES =====
 const FILE = "./games.json";
 
 function loadGames() {
@@ -15,7 +13,6 @@ function loadGames() {
             return JSON.parse(fs.readFileSync(FILE));
         }
     } catch {}
-
     return {};
 }
 
@@ -25,7 +22,20 @@ function saveGames(data) {
 
 let games = loadGames();
 
-// ===== WEBSITE FILES =====
+// CLEANUP DEAD GAMES (no updates in 20 seconds)
+setInterval(() => {
+    const now = Date.now();
+
+    for (const id in games) {
+        if (now - games[id].updated > 20000) {
+            delete games[id];
+        }
+    }
+
+    saveGames(games);
+}, 5000);
+
+// FILES
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -38,45 +48,31 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-// ===== GET GAMES =====
+// GET GAMES
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-// ===== UPDATE GAMES =====
+// UPDATE FROM ROBLOX
 app.post("/update", (req, res) => {
+    const { placeId, name, players, icon, creator } = req.body;
 
-    const {
-        placeId,
-        name,
-        players,
-        icon,
-        creator
-    } = req.body;
-
-    if (!placeId) {
-        return res.json({ ok: false });
-    }
+    if (!placeId) return res.json({ ok: false });
 
     games[placeId] = {
         placeId,
-        name,
-        players,
-        icon,
-        creator,
+        name: name || "Unknown",
+        players: players || 0,
+        icon: icon || "",
+        creator: creator || "Unknown",
         updated: Date.now()
     };
 
     saveGames(games);
 
-    console.log("Updated:", name);
-
     res.json({ ok: true });
 });
 
-// ===== START =====
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log("🌙 LunarX running on port", PORT);
+app.listen(process.env.PORT || 3000, () => {
+    console.log("LunarX running");
 });
