@@ -1,25 +1,18 @@
 const glow = document.getElementById("cursorGlow");
 
-/* CURSOR GLOW */
+/* mouse glow */
 document.addEventListener("mousemove", e => {
-
     glow.style.left = e.clientX + "px";
     glow.style.top = e.clientY + "px";
-
 });
 
 /* STATE */
 let allGames = [];
-
 let currentGame = null;
-
 let selectedPlayer = null;
 let selectedCommand = null;
 
-/* ========================= */
 /* OPEN EXECUTOR */
-/* ========================= */
-
 function openExecute(placeId) {
 
     const game = allGames.find(
@@ -30,139 +23,72 @@ function openExecute(placeId) {
 
     currentGame = game;
 
-    document.getElementById("gameListPage").style.display =
-        "none";
+    document.getElementById("gameListPage").style.display = "none";
+    document.getElementById("gameExecPage").style.display = "block";
 
-    document.getElementById("gameExecPage").style.display =
-        "block";
-
-    document.getElementById("selectedGameTitle").innerText =
-        game.name;
+    document.getElementById("selectedGameTitle").innerText = game.name;
 
     loadPlayers();
 }
 
-/* ========================= */
 /* BACK */
-/* ========================= */
-
 function goBack() {
-
-    document.getElementById("gameListPage").style.display =
-        "block";
-
-    document.getElementById("gameExecPage").style.display =
-        "none";
+    document.getElementById("gameListPage").style.display = "block";
+    document.getElementById("gameExecPage").style.display = "none";
 }
 
-/* ========================= */
 /* LOAD GAMES */
-/* ========================= */
-
 async function loadGames() {
 
-    try {
+    const res = await fetch("/games");
+    const games = await res.json();
 
-        const res = await fetch("/games");
+    allGames = games;
 
-        const games = await res.json();
+    const container = document.getElementById("gamesContainer");
+    const search = document.getElementById("search").value.toLowerCase();
 
-        allGames = games;
+    container.innerHTML = "";
 
-        const container =
-            document.getElementById("gamesContainer");
+    games.forEach(game => {
 
-        const search =
-            document.getElementById("search")
-            .value
-            .toLowerCase();
+        if (search && !game.name.toLowerCase().includes(search)) return;
 
-        container.innerHTML = "";
+        container.innerHTML += `
+            <div class="card">
 
-        games.forEach(game => {
+                <img src="${game.icon || "https://placehold.co/600x400"}">
 
-            if (
-                search &&
-                !game.name.toLowerCase().includes(search)
-            ) return;
+                <div class="info">
 
-            container.innerHTML += `
+                    <h2>${game.name}</h2>
 
-                <div class="card">
+                    <p>👥 Players: ${game.players}</p>
+                    <p>👤 By: ${game.creator}</p>
 
-                    <img
-                        src="${
-                            game.icon &&
-                            game.icon !== ""
-                            ? game.icon
-                            : "https://placehold.co/600x400"
-                        }"
-                    >
+                    <a href="https://www.roblox.com/games/${game.placeId}" target="_blank">
+                        <button class="join">Join</button>
+                    </a>
 
-                    <div class="info">
-
-                        <h2>${game.name}</h2>
-
-                        <p>
-                            👥 Players:
-                            ${game.players}
-                        </p>
-
-                        <p>
-                            👤 By:
-                            ${game.creator}
-                        </p>
-
-                        <a
-                            href="https://www.roblox.com/games/${game.placeId}"
-                            target="_blank"
-                        >
-                            <button class="join">
-                                Join
-                            </button>
-                        </a>
-
-                        <button
-                            class="join"
-                            onclick="openExecute('${game.placeId}')"
-                        >
-                            Execute
-                        </button>
-
-                    </div>
+                    <button class="join" onclick="openExecute('${game.placeId}')">
+                        Execute
+                    </button>
 
                 </div>
 
-            `;
-        });
-
-    } catch (err) {
-
-        console.error(err);
-
-    }
+            </div>
+        `;
+    });
 }
 
-/* ========================= */
-/* LOAD PLAYERS */
-/* ========================= */
-
+/* LOAD PLAYERS (REAL) */
 function loadPlayers() {
 
-    const list =
-        document.getElementById("playerList");
-
+    const list = document.getElementById("playerList");
     list.innerHTML = "";
 
-    if (
-        !currentGame ||
-        !currentGame.playerList ||
-        currentGame.playerList.length <= 0
-    ) {
-
-        list.innerHTML =
-            "<p>No players found</p>";
-
+    if (!currentGame || !currentGame.playerList || currentGame.playerList.length === 0) {
+        list.innerHTML = "<p>No players found</p>";
         return;
     }
 
@@ -172,100 +98,53 @@ function loadPlayers() {
 `https://www.roblox.com/headshot-thumbnail/image?userId=${player.userId}&width=150&height=150&format=png`;
 
         list.innerHTML += `
-
-            <div
-                class="playerCard"
-                onclick="selectPlayer('${player.userId}','${player.name}')"
-            >
+            <div class="playerCard"
+                onclick="selectPlayer('${player.userId}','${player.name}')">
 
                 <img src="${avatar}">
-
                 <span>${player.name}</span>
 
             </div>
-
         `;
     });
 }
 
-/* ========================= */
 /* SELECT PLAYER */
-/* ========================= */
-
 function selectPlayer(id, name) {
-
     selectedPlayer = id;
-
     document.getElementById("selectedPlayer").innerText =
         "Selected Player: " + name;
 }
 
-/* ========================= */
 /* SELECT COMMAND */
-/* ========================= */
-
 function selectCommand(cmd) {
-
     selectedCommand = cmd;
-
     document.getElementById("selectedCommand").innerText =
         "Selected Command: " + cmd;
 }
 
-/* ========================= */
 /* EXECUTE */
-/* ========================= */
-
 async function executeCommand() {
 
-    if (
-        !currentGame ||
-        !selectedPlayer ||
-        !selectedCommand
-    ) {
-
-        alert("Select player + command");
-
+    if (!currentGame || !selectedPlayer || !selectedCommand) {
+        alert("Select player + command first");
         return;
     }
 
-    try {
+    await fetch("/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            placeId: currentGame.placeId,
+            cmd: selectedCommand,
+            target: selectedPlayer
+        })
+    });
 
-        await fetch("/command", {
-
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-
-                placeId: currentGame.placeId,
-
-                cmd: selectedCommand,
-
-                target: selectedPlayer
-            })
-        });
-
-        alert("Executed!");
-
-    } catch (err) {
-
-        console.error(err);
-
-    }
+    alert("Executed!");
 }
 
-/* ========================= */
 /* INIT */
-/* ========================= */
-
-document
-.getElementById("search")
-.addEventListener("input", loadGames);
-
+document.getElementById("search").addEventListener("input", loadGames);
 setInterval(loadGames, 3000);
-
 loadGames();
