@@ -1,4 +1,3 @@
-
 const glow = document.getElementById("cursorGlow");
 
 document.addEventListener("mousemove", e => {
@@ -6,15 +5,11 @@ document.addEventListener("mousemove", e => {
     glow.style.top = e.clientY + "px";
 });
 
-/* STATE */
 let currentGame = null;
 let selectedPlayer = null;
 let selectedCommand = null;
 
-/* ===================== */
-/* NAVIGATION (FIXED) */
-/* ===================== */
-
+/* OPEN EXECUTOR */
 function openExecute(placeId, name) {
 
     currentGame = {
@@ -30,15 +25,14 @@ function openExecute(placeId, name) {
     loadPlayers();
 }
 
+/* BACK */
 function goBack() {
+
     document.getElementById("gameListPage").style.display = "block";
     document.getElementById("gameExecPage").style.display = "none";
 }
 
-/* ===================== */
 /* LOAD GAMES */
-/* ===================== */
-
 async function loadGames() {
 
     const res = await fetch("/games");
@@ -51,7 +45,10 @@ async function loadGames() {
 
     games.forEach(game => {
 
-        if (search && !game.name.toLowerCase().includes(search)) return;
+        if (
+            search &&
+            !game.name.toLowerCase().includes(search)
+        ) return;
 
         container.innerHTML += `
             <div class="card">
@@ -69,7 +66,10 @@ async function loadGames() {
                         <button class="join">Join</button>
                     </a>
 
-                    <button class="join" onclick="openExecute('${game.placeId}', '${game.name}')">
+                    <button
+                        class="join"
+                        onclick="openExecute('${game.placeId}','${game.name}')"
+                    >
                         Execute
                     </button>
 
@@ -80,49 +80,56 @@ async function loadGames() {
     });
 }
 
-/* ===================== */
-/* PLAYERS (PLACEHOLDER) */
-/* ===================== */
-
+/* LOAD PLAYERS */
 function loadPlayers() {
 
     const list = document.getElementById("playerList");
-    list.innerHTML = "";
 
-    list.innerHTML += `
-        <div onclick="selectPlayer('1','Player1')" style="padding:10px;cursor:pointer">
-            👤 Player1
+    list.innerHTML = `
+
+        <div class="playerCard"
+            onclick="selectPlayer('1','Player1')">
+
+            <img src="https://tr.rbxcdn.com/30DAY-AvatarHeadshot-4204DA6D31D7C718B8E56590A9A58A1F-Png/150/150/AvatarHeadshot/Webp/noFilter">
+
+            <span>Player1</span>
+
         </div>
+
     `;
 }
 
-/* ===================== */
-/* SELECTORS */
-/* ===================== */
-
+/* SELECT PLAYER */
 function selectPlayer(id, name) {
+
     selectedPlayer = id;
+
     document.getElementById("selectedPlayer").innerText =
         "Selected Player: " + name;
 }
 
+/* SELECT COMMAND */
 function selectCommand(cmd) {
+
     selectedCommand = cmd;
+
     document.getElementById("selectedCommand").innerText =
         "Selected Command: " + cmd;
 }
 
-/* ===================== */
-/* EXECUTE COMMAND */
-/* ===================== */
-
+/* EXECUTE */
 async function executeCommand() {
 
-    if (!currentGame || !selectedPlayer || !selectedCommand) return;
+    if (!currentGame || !selectedPlayer || !selectedCommand) {
+        alert("Select player + command first");
+        return;
+    }
 
     await fetch("/command", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json"
+        },
         body: JSON.stringify({
             placeId: currentGame.placeId,
             cmd: selectedCommand,
@@ -130,10 +137,14 @@ async function executeCommand() {
         })
     });
 
-    alert("Command sent!");
+    alert("Executed!");
 }
 
 /* INIT */
-document.getElementById("search").addEventListener("input", loadGames);
+document
+.getElementById("search")
+.addEventListener("input", loadGames);
+
 setInterval(loadGames, 3000);
+
 loadGames();
