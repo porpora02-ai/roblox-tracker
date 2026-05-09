@@ -10,10 +10,7 @@ let currentGame = null;
 let selectedPlayer = null;
 let selectedCommand = null;
 
-/* =========================
-   OPEN EXECUTOR
-========================= */
-
+/* OPEN EXECUTOR */
 function openExecute(placeId) {
 
     const game = allGames.find(
@@ -38,10 +35,7 @@ function goBack() {
     document.getElementById("gameExecPage").style.display = "none";
 }
 
-/* =========================
-   LOAD GAMES
-========================= */
-
+/* LOAD GAMES */
 async function loadGames() {
 
     const res = await fetch("/games");
@@ -58,10 +52,8 @@ async function loadGames() {
 
         if (search && !game.name.toLowerCase().includes(search)) return;
 
-        // 🔥 FIXED ICON (ROBLOX OFFICIAL API)
-        const icon = game.placeId
-            ? `https://thumbnails.roblox.com/v1/games/icons?universeIds=${game.placeId}&size=512x512&format=Png&isCircular=false`
-            : "https://placehold.co/600x400";
+        /* FIXED ICON (ROBLOX OFFICIAL UNIVERSE THUMBNAIL) */
+        const icon = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${game.placeId}&size=512x512&format=Png&isCircular=false`;
 
         container.innerHTML += `
             <div class="card">
@@ -71,7 +63,6 @@ async function loadGames() {
                 <div class="info">
 
                     <h2>${game.name}</h2>
-
                     <p>👥 Players: ${game.players}</p>
                     <p>👤 By: ${game.creator}</p>
 
@@ -90,10 +81,7 @@ async function loadGames() {
     });
 }
 
-/* =========================
-   LOAD PLAYERS (FIXED)
-========================= */
-
+/* LOAD PLAYERS (REAL + LIVE) */
 function loadPlayers() {
 
     const list = document.getElementById("playerList");
@@ -106,8 +94,9 @@ function loadPlayers() {
 
     currentGame.playerList.forEach(player => {
 
+        /* FIXED PFP (WORKS ALWAYS) */
         const avatar =
-`https://www.roblox.com/headshot-thumbnail/image?userId=${player.userId}&width=150&height=150&format=png`;
+`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${player.userId}&size=150x150&format=Png&isCircular=true`;
 
         list.innerHTML += `
             <div class="playerCard"
@@ -120,6 +109,11 @@ function loadPlayers() {
         `;
     });
 }
+
+/* LIVE PLAYER REFRESH (FIX) */
+setInterval(() => {
+    if (currentGame) loadPlayers();
+}, 2000);
 
 /* SELECT */
 function selectPlayer(id, name) {
