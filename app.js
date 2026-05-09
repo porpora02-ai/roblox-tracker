@@ -7,36 +7,21 @@ document.addEventListener("mousemove", e => {
     glow.style.top = e.clientY + "px";
 });
 
-/* STATE */
-let selectedGame = null;
-let selectedPlayer = null;
-let selectedCommand = null;
-
-/* ===================== */
-/* PAGE SWITCHING */
-/* ===================== */
-
-function openGame(game) {
-    selectedGame = game;
-
-    document.getElementById("gameListPage").style.display = "none";
-    document.getElementById("gameExecPage").style.display = "block";
-
-    document.getElementById("selectedGameTitle").innerText = game.name;
-
-    loadPlayers();
+/* GET URL PARAMS */
+function getParam(name) {
+    const url = new URL(window.location.href);
+    return url.searchParams.get(name);
 }
 
-function backToGames() {
-    document.getElementById("gameListPage").style.display = "block";
-    document.getElementById("gameExecPage").style.display = "none";
-}
+/* ROUTING CHECK */
+let currentGame = null;
 
 /* ===================== */
-/* LOAD GAMES */
+/* LOAD GAMES PAGE */
 /* ===================== */
 
 async function loadGames() {
+
     const res = await fetch("/games");
     const games = await res.json();
 
@@ -65,7 +50,7 @@ async function loadGames() {
                         <button class="join">Join</button>
                     </a>
 
-                    <button class="join" onclick='openGame(${JSON.stringify(game)})'>
+                    <button class="join" onclick="openExecute('${game.placeId}', '${game.name}')">
                         Execute
                     </button>
 
@@ -77,19 +62,52 @@ async function loadGames() {
 }
 
 /* ===================== */
-/* PLAYERS (REAL FIX LATER HOOK) */
+/* NAV TO EXECUTOR PAGE */
+/* ===================== */
+
+function openExecute(placeId, name) {
+    window.location.href = `/execute?id=${placeId}&name=${encodeURIComponent(name)}`;
+}
+
+/* ===================== */
+/* EXECUTOR PAGE LOAD */
+/* ===================== */
+
+async function loadExecutePage() {
+
+    const id = getParam("id");
+    const name = getParam("name");
+
+    if (!id) return;
+
+    document.getElementById("gameListPage").style.display = "none";
+    document.getElementById("gameExecPage").style.display = "block";
+
+    document.getElementById("selectedGameTitle").innerText = name;
+
+    currentGame = { placeId: id, name };
+
+    loadPlayers();
+}
+
+/* ===================== */
+/* BACK BUTTON */
+/* ===================== */
+
+function goBack() {
+    window.location.href = "/";
+}
+
+/* ===================== */
+/* PLAYERS (PLACEHOLDER FOR NOW) */
 /* ===================== */
 
 function loadPlayers() {
-
     const list = document.getElementById("playerList");
     list.innerHTML = "";
 
-    // NOTE: Roblox cannot send full player list via HTTP easily
-    // so this is placeholder structure for now
-
     list.innerHTML += `
-        <div onclick="selectPlayer('example','Player1')" style="padding:10px;cursor:pointer">
+        <div onclick="selectPlayer('1','Player1')" style="padding:10px;cursor:pointer">
             👤 Player1
         </div>
     `;
@@ -98,6 +116,9 @@ function loadPlayers() {
 /* ===================== */
 /* SELECTORS */
 /* ===================== */
+
+let selectedPlayer = null;
+let selectedCommand = null;
 
 function selectPlayer(id, name) {
     selectedPlayer = id;
@@ -112,27 +133,28 @@ function selectCommand(cmd) {
 }
 
 /* ===================== */
-/* EXECUTE COMMAND */
+/* EXECUTE */
 /* ===================== */
 
 async function executeCommand() {
 
-    if (!selectedGame || !selectedPlayer || !selectedCommand) return;
+    if (!currentGame || !selectedPlayer || !selectedCommand) return;
 
     await fetch("/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            placeId: selectedGame.placeId,
+            placeId: currentGame.placeId,
             cmd: selectedCommand,
             target: selectedPlayer
         })
     });
 
-    alert("Command sent!");
+    alert("Executed!");
 }
 
 /* INIT */
 document.getElementById("search").addEventListener("input", loadGames);
 setInterval(loadGames, 3000);
 loadGames();
+loadExecutePage();
