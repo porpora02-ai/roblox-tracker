@@ -1,71 +1,51 @@
 const glow = document.getElementById("cursorGlow");
 
-// MOUSE GLOW
 document.addEventListener("mousemove", e => {
-
     glow.style.left = e.clientX + "px";
     glow.style.top = e.clientY + "px";
-
 });
 
-// LOAD GAMES
 async function loadGames() {
-
     const res = await fetch("/games");
-
     const games = await res.json();
 
-    const container =
-        document.getElementById("gamesContainer");
+    const container = document.getElementById("gamesContainer");
+
+    const search = document.getElementById("search").value.toLowerCase();
 
     container.innerHTML = "";
 
-    const search =
-        document.getElementById("search")
-        .value
-        .toLowerCase();
+    games
+        .sort((a, b) => b.players - a.players)
+        .forEach(game => {
 
-    games.forEach(game => {
+            if (search && !game.name.toLowerCase().includes(search)) return;
 
-        if (
-            search &&
-            !game.name.toLowerCase().includes(search)
-        ) return;
+            container.innerHTML += `
+                <div class="card">
 
-        container.innerHTML += `
-        <div class="card">
+                    <img src="${game.icon || "https://placehold.co/600x400"}">
 
-            <img src="${game.icon || "https://placehold.co/600x400"}">
+                    <div class="info">
 
-            <div class="info">
+                        <h2>${game.name}</h2>
 
-                <h2>${game.name}</h2>
+                        <p>👥 Players: ${game.players}</p>
+                        <p>👤 By: ${game.creator}</p>
+                        <p>🆔 ${game.placeId}</p>
 
-                <p>👥 Players: ${game.players}</p>
+                        <a href="https://www.roblox.com/games/${game.placeId}" target="_blank">
+                            <button class="join">Join Game</button>
+                        </a>
 
-                <p>🆔 Place ID: ${game.placeId}</p>
+                    </div>
 
-                <p>👤 By: ${game.creator}</p>
-
-                <a
-                    href="https://www.roblox.com/games/${game.placeId}"
-                    target="_blank"
-                >
-                    <button class="join">
-                        Join Game
-                    </button>
-                </a>
-
-            </div>
-        </div>`;
-    });
+                </div>
+            `;
+        });
 }
 
-document
-.getElementById("search")
-.addEventListener("input", loadGames);
+document.getElementById("search").addEventListener("input", loadGames);
 
-// LIVE REFRESH
 setInterval(loadGames, 3000);
-
 loadGames();
