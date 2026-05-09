@@ -22,8 +22,25 @@ function saveGames(data) {
 
 let games = loadGames();
 
-/* COMMAND QUEUE (SIGNALS) */
+/* COMMAND SYSTEM */
 let commands = [];
+
+/* CLEANUP SYSTEM (FIX FOR 0 PLAYERS STUCK GAMES) */
+setInterval(() => {
+    const now = Date.now();
+
+    for (const id in games) {
+        const g = games[id];
+
+        if (!g.players || g.players <= 0) {
+            delete games[id];
+        } else if (now - g.updated > 15000) {
+            delete games[id];
+        }
+    }
+
+    saveGames(games);
+}, 5000);
 
 /* WEBSITE FILES */
 app.get("/", (req, res) => {
@@ -38,12 +55,12 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-/* GAME DATA */
+/* GAME LIST */
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-/* ROBLOX GAME UPDATE */
+/* ROBLOX UPDATE */
 app.post("/update", (req, res) => {
     const { placeId, name, players, icon, creator } = req.body;
 
@@ -63,7 +80,7 @@ app.post("/update", (req, res) => {
     res.json({ ok: true });
 });
 
-/* SEND COMMAND (SIGNAL) */
+/* SEND COMMAND */
 app.post("/command", (req, res) => {
     const { placeId, cmd, target } = req.body;
 
