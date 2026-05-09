@@ -1,111 +1,111 @@
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
 
-const app = express();
-app.use(express.json());
+let currentGame = null;
+let selectedPlayer = null;
+let selectedCommand = null;
 
-const FILE = "./games.json";
+/* OPEN EXECUTOR */
+function openExecute(placeId, name) {
 
-function loadGames() {
-    try {
-        if (fs.existsSync(FILE)) {
-            return JSON.parse(fs.readFileSync(FILE));
-        }
-    } catch {}
-    return {};
+    currentGame = { placeId, name };
+
+    document.getElementById("gameListPage").style.display = "none";
+    document.getElementById("gameExecPage").style.display = "block";
+
+    document.getElementById("selectedGameTitle").innerText = name;
+
+    loadPlayers();
 }
 
-function saveGames(data) {
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+/* BACK */
+function goBack() {
+    document.getElementById("gameListPage").style.display = "block";
+    document.getElementById("gameExecPage").style.display = "none";
 }
 
-let games = loadGames();
+/* ===================== */
+/* PLAYERS (REAL LOOK UI) */
+/* ===================== */
 
-/* COMMAND SYSTEM */
-let commands = [];
+function loadPlayers() {
 
-/* CLEANUP SYSTEM (FIX FOR 0 PLAYERS STUCK GAMES) */
-setInterval(() => {
-    const now = Date.now();
+    const list = document.getElementById("playerList");
+    list.innerHTML = "";
 
-    for (const id in games) {
-        const g = games[id];
+    // REAL LOOKING MOCK (replace later with real Roblox API if you want)
+    const players = [
+        { name: "Player1", id: "1" },
+        { name: "Player2", id: "2" }
+    ];
 
-        if (!g.players || g.players <= 0) {
-            delete games[id];
-        } else if (now - g.updated > 15000) {
-            delete games[id];
-        }
-    }
+    players.forEach(p => {
 
-    saveGames(games);
-}, 5000);
+        const img = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.id}&width=150&height=150&format=png`;
 
-/* WEBSITE FILES */
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
-});
+        list.innerHTML += `
+            <div class="playerCard" onclick="selectPlayer('${p.id}','${p.name}')">
+                <img src="${img}">
+                <span>${p.name}</span>
+            </div>
+        `;
+    });
+}
 
-app.get("/style.css", (req, res) => {
-    res.sendFile(path.join(__dirname, "style.css"));
-});
+/* ===================== */
+/* SELECT PLAYER */
+/* ===================== */
 
-app.get("/app.js", (req, res) => {
-    res.sendFile(path.join(__dirname, "app.js"));
-});
+function selectPlayer(id, name) {
+    selectedPlayer = id;
 
-/* GAME LIST */
-app.get("/games", (req, res) => {
-    res.json(Object.values(games));
-});
+    document.getElementById("selectedPlayer").innerText =
+        "Selected Player: " + name;
+}
 
-/* ROBLOX UPDATE */
-app.post("/update", (req, res) => {
-    const { placeId, name, players, icon, creator } = req.body;
+/* ===================== */
+/* SELECT COMMAND */
+/* ===================== */
 
-    if (!placeId) return res.json({ ok: false });
+function selectCommand(cmd) {
+    selectedCommand = cmd;
 
-    games[placeId] = {
-        placeId,
-        name,
-        players,
-        icon,
-        creator,
-        updated: Date.now()
-    };
+    document.getElementById("selectedCommand").innerText =
+        "Selected Command: " + cmd;
+}
 
-    saveGames(games);
+/* ===================== */
+/* HOVER FX (optional glow control) */
+/* ===================== */
 
-    res.json({ ok: true });
-});
+function hoverCmd(el) {
+    el.style.transform = "scale(1.05)";
+}
 
-/* SEND COMMAND */
-app.post("/command", (req, res) => {
-    const { placeId, cmd, target } = req.body;
+function unhoverCmd(el) {
+    el.style.transform = "scale(1)";
+}
 
-    if (!placeId || !cmd) return res.json({ ok: false });
+/* ===================== */
+/* EXECUTE */
+/* ===================== */
 
-    commands.push({
-        placeId,
-        cmd,
-        target,
-        id: Date.now()
+async function executeCommand() {
+
+    if (!currentGame || !selectedPlayer || !selectedCommand) return;
+
+    await fetch("/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            placeId: currentGame.placeId,
+            cmd: selectedCommand,
+            target: selectedPlayer
+        })
     });
 
-    res.json({ ok: true });
-});
+    alert("Executed!");
+}
 
-/* ROBLOX FETCH COMMANDS */
-app.get("/commands", (req, res) => {
-    const { placeId } = req.query;
-
-    const filtered = commands.filter(c => c.placeId == placeId);
-
-    commands = commands.filter(c => c.placeId != placeId);
-
-    res.json(filtered);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("🌙 LunarX running"));
+/* INIT */
+document.getElementById("search")?.addEventListener("input", loadGames);
+setInterval(loadGames, 3000);
+loadGames();
