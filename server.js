@@ -13,26 +13,19 @@ function loadGames() {
             return JSON.parse(fs.readFileSync(FILE, "utf8"));
         }
     } catch (e) {
-        console.log("load error:", e);
+        console.log("load error", e);
     }
     return {};
 }
 
 function saveGames(data) {
-    try {
-        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.log("save error:", e);
-    }
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
 let games = loadGames();
 let commands = [];
 
-/* =========================
-   STATIC FILES
-========================= */
-
+/* STATIC */
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -45,34 +38,25 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-/* =========================
-   GAMES
-========================= */
-
+/* GAMES */
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-/* =========================
-   UPDATE FROM ROBLOX
-========================= */
-
+/* UPDATE FROM ROBLOX */
 app.post("/update", (req, res) => {
 
     const data = req.body;
 
-    if (!data.placeId) {
-        return res.json({ ok: false });
-    }
+    if (!data.placeId) return res.json({ ok: false });
 
     games[data.placeId] = {
 
         placeId: data.placeId,
-        name: data.name || "Unknown",
+        name: data.name || "Unknown Game",
         players: data.players || 0,
         creator: data.creator || "Unknown",
 
-        // 🔥 FIXED: always safe array
         playerList: Array.isArray(data.playerList)
             ? data.playerList
             : [],
@@ -85,15 +69,10 @@ app.post("/update", (req, res) => {
     res.json({ ok: true });
 });
 
-/* =========================
-   COMMAND SYSTEM
-========================= */
-
+/* COMMAND SYSTEM */
 app.post("/command", (req, res) => {
 
     const { placeId, cmd, target } = req.body;
-
-    if (!placeId || !cmd) return res.json({ ok: false });
 
     commands.push({
         placeId,
@@ -116,16 +95,10 @@ app.get("/commands", (req, res) => {
     res.json(list);
 });
 
-/* =========================
-   IMPORTANT (NO GAME DELETION)
-========================= */
-
-// 🔥 intentionally disabled so games NEVER disappear
+/* KEEP GAMES (NO DELETE) */
 setInterval(() => {
-    // nothing here
+    // intentionally empty so games never disappear
 }, 60000);
-
-/* ========================= */
 
 const PORT = process.env.PORT || 3000;
 
