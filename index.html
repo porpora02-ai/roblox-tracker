@@ -1,50 +1,31 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <title>LunarX</title>
-    <link rel="stylesheet" href="/style.css">
-</head>
-
-<body>
-
-<div id="cursorGlow"></div>
-
-<div class="topbar">
-    <div class="logo">🌙 LunarX</div>
-
-    <div class="nav">
-        <button onclick="showPage('games')">Games</button>
-        <button onclick="showPage('executor')">Executor</button>
-    </div>
-</div>
-
-<!-- GAMES PAGE -->
-<div id="gamesPage">
-
-    <div class="main">
-
-        <h1>Available Games</h1>
-
-        <input id="search" placeholder="Search games...">
-
-        <div id="gamesContainer"></div>
-
-    </div>
-
-</div>
-
-<!-- EXECUTOR PAGE -->
 <div id="executorPage" style="display:none">
 
-    <div class="main">
-        <h1>Executor</h1>
-        <p style="opacity:0.7">Empty for now — we’ll build it next.</p>
+<div class="main">
+
+    <h1>Executor Panel</h1>
+
+    <div class="executor">
+
+        <div class="leftPanel">
+            <h2>Players</h2>
+            <div id="playerList"></div>
+        </div>
+
+        <div class="rightPanel">
+            <h2>Commands</h2>
+
+            <button onclick="selectCommand('R6')">R6</button>
+            <button onclick="selectCommand('KICK')">Kick</button>
+            <button onclick="selectCommand('FREEZE')">Freeze</button>
+
+            <p id="selectedPlayer">Selected Player: none</p>
+            <p id="selectedCommand">Selected Command: none</p>
+
+            <button class="join" onclick="executeCommand()">EXECUTE</button>
+        </div>
+
     </div>
 
 </div>
 
-<script src="/app.js"></script>
-
-</body>
-</html>
+</div>
