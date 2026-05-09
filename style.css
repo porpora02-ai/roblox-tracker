@@ -1,11 +1,6 @@
-
-/* ===================== */
-/* BASE */
-/* ===================== */
-
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
 
     background:
         radial-gradient(circle at center,
@@ -16,10 +11,6 @@ body {
     color: white;
     overflow-x: hidden;
 }
-
-/* ===================== */
-/* CURSOR GLOW */
-/* ===================== */
 
 #cursorGlow {
     position: fixed;
@@ -40,28 +31,16 @@ body {
     transform: translate(-50%, -50%);
 
     z-index: 0;
-
-    mix-blend-mode: screen;
 }
-
-/* ===================== */
-/* TOP BAR */
-/* ===================== */
 
 .topbar {
     position: relative;
     z-index: 2;
 
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    padding: 20px;
 
-    padding: 18px 30px;
-
-    background: rgba(10,10,10,0.55);
+    background: rgba(0,0,0,0.4);
     backdrop-filter: blur(15px);
-
-    border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
 .logo {
@@ -69,13 +48,7 @@ body {
     font-weight: bold;
 
     color: #c084ff;
-
-    text-shadow: 0 0 12px rgba(192,132,255,0.5);
 }
-
-/* ===================== */
-/* MAIN */
-/* ===================== */
 
 .main {
     position: relative;
@@ -84,60 +57,32 @@ body {
     padding: 30px;
 }
 
-h1 {
-    margin-bottom: 20px;
-    color: #e2c7ff;
-}
-
-/* ===================== */
-/* SEARCH */
-/* ===================== */
-
 #search {
     width: 100%;
 
-    padding: 16px;
+    padding: 15px;
 
     border: none;
     border-radius: 15px;
 
-    margin-bottom: 25px;
-
-    font-size: 16px;
+    margin-bottom: 20px;
 
     background: rgba(255,255,255,0.08);
     color: white;
-
-    outline: none;
 }
-
-/* ===================== */
-/* GAME CARDS */
-/* ===================== */
 
 .card {
     display: flex;
 
-    background: rgba(255,255,255,0.05);
+    margin-bottom: 20px;
 
-    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
 
     border-radius: 20px;
 
     overflow: hidden;
 
-    margin-bottom: 20px;
-
-    backdrop-filter: blur(14px);
-
-    transition: 0.25s;
-
-    box-shadow: 0 0 30px rgba(140,0,255,0.12);
-}
-
-.card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0 40px rgba(180,80,255,0.3);
+    backdrop-filter: blur(10px);
 }
 
 .card img {
@@ -148,56 +93,41 @@ h1 {
 }
 
 .info {
-    padding: 18px;
+    padding: 20px;
 }
 
-.info h2 {
-    margin-top: 0;
-    color: #f0d7ff;
-}
-
-.info p {
-    color: #d5c4e9;
-}
-
-/* ===================== */
-/* BUTTONS */
-/* ===================== */
-
-.join {
-    margin-top: 12px;
-
-    background: linear-gradient(135deg,#8f4dff,#b97dff);
+.join,
+.cmdBtn {
+    margin-top: 10px;
 
     border: none;
-    color: white;
 
-    padding: 12px 20px;
+    padding: 12px 18px;
 
-    border-radius: 14px;
+    border-radius: 12px;
 
     cursor: pointer;
 
-    font-size: 15px;
+    color: white;
+
+    background:
+        linear-gradient(135deg,#8f4dff,#b97dff);
 
     transition: 0.2s;
 }
 
-.join:hover {
+.join:hover,
+.cmdBtn:hover {
     transform: scale(1.05);
-    box-shadow: 0 0 18px rgba(180,80,255,0.45);
-}
 
-/* ===================== */
-/* EXECUTOR LAYOUT */
-/* ===================== */
+    box-shadow:
+        0 0 20px rgba(180,80,255,0.5);
+}
 
 .executor {
     display: flex;
     gap: 20px;
 }
-
-/* PANELS */
 
 .leftPanel,
 .rightPanel {
@@ -208,21 +138,7 @@ h1 {
     padding: 20px;
 
     border-radius: 15px;
-
-    backdrop-filter: blur(10px);
-
-    border: 1px solid rgba(255,255,255,0.08);
 }
-
-.leftPanel h2,
-.rightPanel h2 {
-    margin-top: 0;
-    color: #e2c7ff;
-}
-
-/* ===================== */
-/* PLAYER CARDS */
-/* ===================== */
 
 .playerCard {
     display: flex;
@@ -230,11 +146,12 @@ h1 {
     gap: 10px;
 
     padding: 10px;
-    margin-bottom: 8px;
-
-    background: rgba(255,255,255,0.05);
 
     border-radius: 12px;
+
+    margin-bottom: 10px;
+
+    background: rgba(255,255,255,0.05);
 
     cursor: pointer;
 
@@ -243,51 +160,11 @@ h1 {
 
 .playerCard:hover {
     background: rgba(180,80,255,0.25);
-    transform: scale(1.03);
-    box-shadow: 0 0 15px rgba(180,80,255,0.2);
 }
 
 .playerCard img {
-    width: 32px;
-    height: 32px;
+    width: 35px;
+    height: 35px;
 
     border-radius: 50%;
-}
-
-/* ===================== */
-/* COMMAND BUTTONS */
-/* ===================== */
-
-.cmdBtn {
-    width: 100%;
-
-    padding: 12px;
-
-    margin-top: 10px;
-
-    border: none;
-    border-radius: 12px;
-
-    background: rgba(180,80,255,0.2);
-    color: white;
-
-    cursor: pointer;
-
-    transition: 0.2s;
-}
-
-.cmdBtn:hover {
-    transform: scale(1.05);
-    background: rgba(180,80,255,0.5);
-    box-shadow: 0 0 20px rgba(180,80,255,0.4);
-}
-
-/* ===================== */
-/* TEXT STATES */
-/* ===================== */
-
-#selectedPlayer,
-#selectedCommand {
-    opacity: 0.85;
-    font-size: 14px;
 }
