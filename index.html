@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
     <meta charset="UTF-8">
@@ -9,23 +9,16 @@
 
 <body>
 
-<!-- MOUSE GLOW -->
 <div id="cursorGlow"></div>
 
-<!-- TOP BAR -->
 <div class="topbar">
     <div class="logo">🌙 LunarX</div>
-
-    <div class="nav">
-        <button onclick="showPage('games')">Games</button>
-        <button onclick="showPage('executor')">Executor</button>
-    </div>
 </div>
 
 <!-- ===================== -->
-<!-- GAMES PAGE -->
+<!-- GAME LIST PAGE -->
 <!-- ===================== -->
-<div id="gamesPage">
+<div id="gameListPage">
 
     <div class="main">
 
@@ -42,27 +35,25 @@
 <!-- ===================== -->
 <!-- EXECUTOR PAGE -->
 <!-- ===================== -->
-<div id="executorPage" style="display:none">
+<div id="gameExecPage" style="display:none">
 
     <div class="main">
 
-        <h1>Executor Panel</h1>
+        <button onclick="goBack()" class="join">⬅ Back</button>
+
+        <h1 id="selectedGameTitle">Game</h1>
 
         <div class="executor">
 
-            <!-- PLAYERS -->
             <div class="leftPanel">
                 <h2>Players</h2>
                 <div id="playerList"></div>
             </div>
 
-            <!-- COMMANDS -->
             <div class="rightPanel">
                 <h2>Commands</h2>
 
                 <button onclick="selectCommand('R6')">R6</button>
-                <button onclick="selectCommand('KICK')">Kick</button>
-                <button onclick="selectCommand('FREEZE')">Freeze</button>
 
                 <hr style="margin:15px 0; opacity:0.2;">
 
@@ -81,7 +72,6 @@
 
 </div>
 
-<!-- SCRIPTS -->
 <script src="/app.js"></script>
 
 </body>
