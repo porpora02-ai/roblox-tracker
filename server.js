@@ -22,18 +22,8 @@ function saveGames(data) {
 
 let games = loadGames();
 
-/* REMOVE DEAD SERVERS */
-setInterval(() => {
-    const now = Date.now();
-
-    for (const id in games) {
-        if (now - games[id].updated > 20000) {
-            delete games[id];
-        }
-    }
-
-    saveGames(games);
-}, 5000);
+/* COMMAND QUEUE (SIGNALS) */
+let commands = [];
 
 /* WEBSITE FILES */
 app.get("/", (req, res) => {
@@ -53,7 +43,7 @@ app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-/* ROBLOX UPDATE */
+/* ROBLOX GAME UPDATE */
 app.post("/update", (req, res) => {
     const { placeId, name, players, icon, creator } = req.body;
 
@@ -61,20 +51,44 @@ app.post("/update", (req, res) => {
 
     games[placeId] = {
         placeId,
-        name: name || "Unknown",
-        players: players || 0,
-        icon: icon || "",
-        creator: creator || "Unknown",
+        name,
+        players,
+        icon,
+        creator,
         updated: Date.now()
     };
 
     saveGames(games);
 
-    console.log("UPDATED:", name, players);
+    res.json({ ok: true });
+});
+
+/* SEND COMMAND (SIGNAL) */
+app.post("/command", (req, res) => {
+    const { placeId, cmd, target } = req.body;
+
+    if (!placeId || !cmd) return res.json({ ok: false });
+
+    commands.push({
+        placeId,
+        cmd,
+        target,
+        id: Date.now()
+    });
 
     res.json({ ok: true });
 });
 
-app.listen(process.env.PORT || 3000, () => {
-    console.log("🌙 LunarX running");
+/* ROBLOX FETCH COMMANDS */
+app.get("/commands", (req, res) => {
+    const { placeId } = req.query;
+
+    const filtered = commands.filter(c => c.placeId == placeId);
+
+    commands = commands.filter(c => c.placeId != placeId);
+
+    res.json(filtered);
 });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("🌙 LunarX running"));
