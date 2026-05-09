@@ -1,40 +1,3 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta charset="UTF-8">
-    <title>LunarX</title>
-    <link rel="stylesheet" href="/style.css">
-</head>
-
-<body>
-
-<div id="cursorGlow"></div>
-
-<div class="topbar">
-    <div class="logo">🌙 LunarX</div>
-</div>
-
-<!-- ===================== -->
-<!-- GAME LIST PAGE -->
-<!-- ===================== -->
-<div id="gameListPage">
-
-    <div class="main">
-
-        <h1>Available Games</h1>
-
-        <input id="search" placeholder="Search games...">
-
-        <div id="gamesContainer"></div>
-
-    </div>
-
-</div>
-
-<!-- ===================== -->
-<!-- EXECUTOR PAGE -->
-<!-- ===================== -->
 <div id="gameExecPage" style="display:none">
 
     <div class="main">
@@ -45,15 +8,19 @@
 
         <div class="executor">
 
+            <!-- PLAYERS -->
             <div class="leftPanel">
                 <h2>Players</h2>
                 <div id="playerList"></div>
             </div>
 
+            <!-- COMMANDS -->
             <div class="rightPanel">
                 <h2>Commands</h2>
 
-                <button onclick="selectCommand('R6')">R6</button>
+                <button class="cmdBtn" onmouseover="hoverCmd(this)" onmouseout="unhoverCmd(this)" onclick="selectCommand('R6')">
+                    🔄 Force R6
+                </button>
 
                 <hr style="margin:15px 0; opacity:0.2;">
 
@@ -71,8 +38,3 @@
     </div>
 
 </div>
-
-<script src="/app.js"></script>
-
-</body>
-</html>
