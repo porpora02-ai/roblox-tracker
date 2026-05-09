@@ -10,7 +10,10 @@ let currentGame = null;
 let selectedPlayer = null;
 let selectedCommand = null;
 
-/* OPEN EXECUTOR */
+/* =========================
+   OPEN EXECUTOR
+========================= */
+
 function openExecute(placeId) {
 
     const game = allGames.find(
@@ -24,7 +27,8 @@ function openExecute(placeId) {
     document.getElementById("gameListPage").style.display = "none";
     document.getElementById("gameExecPage").style.display = "block";
 
-    document.getElementById("selectedGameTitle").innerText = game.name;
+    document.getElementById("selectedGameTitle").innerText =
+        game.name;
 
     loadPlayers();
 }
@@ -35,7 +39,10 @@ function goBack() {
     document.getElementById("gameExecPage").style.display = "none";
 }
 
-/* LOAD GAMES */
+/* =========================
+   LOAD GAMES
+========================= */
+
 async function loadGames() {
 
     const res = await fetch("/games");
@@ -52,8 +59,9 @@ async function loadGames() {
 
         if (search && !game.name.toLowerCase().includes(search)) return;
 
-        /* FIXED ICON (ROBLOX OFFICIAL UNIVERSE THUMBNAIL) */
-        const icon = `https://thumbnails.roblox.com/v1/games/icons?universeIds=${game.placeId}&size=512x512&format=Png&isCircular=false`;
+        /* ✅ FIXED ICON (ROBLOX WORKING METHOD) */
+        const icon =
+`https://thumbnails.roblox.com/v1/games/icons?universeIds=${game.placeId}&size=512x512&format=Png&isCircular=false`;
 
         container.innerHTML += `
             <div class="card">
@@ -81,7 +89,10 @@ async function loadGames() {
     });
 }
 
-/* LOAD PLAYERS (REAL + LIVE) */
+/* =========================
+   LOAD PLAYERS (FIXED PFP)
+========================= */
+
 function loadPlayers() {
 
     const list = document.getElementById("playerList");
@@ -94,7 +105,7 @@ function loadPlayers() {
 
     currentGame.playerList.forEach(player => {
 
-        /* FIXED PFP (WORKS ALWAYS) */
+        /* ✅ FIXED AVATAR */
         const avatar =
 `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${player.userId}&size=150x150&format=Png&isCircular=true`;
 
@@ -110,12 +121,15 @@ function loadPlayers() {
     });
 }
 
-/* LIVE PLAYER REFRESH (FIX) */
+/* LIVE REFRESH PLAYERS */
 setInterval(() => {
     if (currentGame) loadPlayers();
 }, 2000);
 
-/* SELECT */
+/* =========================
+   SELECT
+========================= */
+
 function selectPlayer(id, name) {
     selectedPlayer = id;
     document.getElementById("selectedPlayer").innerText =
@@ -128,7 +142,10 @@ function selectCommand(cmd) {
         "Selected Command: " + cmd;
 }
 
-/* EXECUTE */
+/* =========================
+   EXECUTE
+========================= */
+
 async function executeCommand() {
 
     if (!currentGame || !selectedPlayer || !selectedCommand) {
