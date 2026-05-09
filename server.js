@@ -7,30 +7,48 @@ app.use(express.json());
 
 const FILE = path.join(__dirname, "games.json");
 
-/* SAFE LOAD */
 function loadGames() {
     try {
         if (fs.existsSync(FILE)) {
             return JSON.parse(fs.readFileSync(FILE, "utf8"));
         }
     } catch (e) {
-        console.log("Load error:", e);
+        console.log(e);
     }
+
     return {};
 }
 
 function saveGames(data) {
-    try {
-        fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.log("Save error:", e);
-    }
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
 let games = loadGames();
 let commands = [];
 
-/* STATIC FILES */
+/* REMOVE DEAD GAMES */
+setInterval(() => {
+
+    const now = Date.now();
+
+    for (const id in games) {
+
+        const g = games[id];
+
+        if (!g.players || g.players <= 0) {
+            delete games[id];
+        }
+
+        else if (now - g.updated > 15000) {
+            delete games[id];
+        }
+    }
+
+    saveGames(games);
+
+}, 5000);
+
+/* WEBSITE */
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -48,18 +66,27 @@ app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-/* UPDATE FROM ROBLOX */
+/* UPDATE */
 app.post("/update", (req, res) => {
-    const { placeId, name, players, icon, creator } = req.body;
 
-    if (!placeId) return res.json({ ok: false });
+    const {
+        placeId,
+        name,
+        players,
+        icon,
+        creator
+    } = req.body;
+
+    if (!placeId) {
+        return res.json({ ok: false });
+    }
 
     games[placeId] = {
         placeId,
         name,
-        players: players || 0,
-        icon: icon || "",
-        creator: creator || "Unknown",
+        players,
+        icon,
+        creator,
         updated: Date.now()
     };
 
@@ -70,42 +97,36 @@ app.post("/update", (req, res) => {
 
 /* COMMANDS */
 app.post("/command", (req, res) => {
-    const { placeId, cmd, target } = req.body;
 
-    if (!placeId || !cmd) return res.json({ ok: false });
+    const {
+        placeId,
+        cmd,
+        target
+    } = req.body;
 
-    commands.push({ placeId, cmd, target });
+    commands.push({
+        placeId,
+        cmd,
+        target,
+        id: Date.now()
+    });
 
     res.json({ ok: true });
 });
 
 app.get("/commands", (req, res) => {
+
     const { placeId } = req.query;
 
-    const list = commands.filter(c => c.placeId == placeId);
+    const filtered = commands.filter(c => c.placeId == placeId);
 
     commands = commands.filter(c => c.placeId != placeId);
 
-    res.json(list);
+    res.json(filtered);
 });
 
-/* CLEANUP */
-setInterval(() => {
-    const now = Date.now();
-
-    for (const id in games) {
-        if (!games[id].players || games[id].players <= 0) {
-            delete games[id];
-        } else if (now - games[id].updated > 15000) {
-            delete games[id];
-        }
-    }
-
-    saveGames(games);
-}, 5000);
-
-/* IMPORTANT RENDER FIX */
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
     console.log("LunarX running on", PORT);
 });
