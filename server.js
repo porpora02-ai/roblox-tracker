@@ -22,7 +22,7 @@ function saveGames(data) {
 
 let games = loadGames();
 
-/* CLEAN OLD SERVERS */
+/* REMOVE DEAD SERVERS */
 setInterval(() => {
     const now = Date.now();
 
@@ -48,7 +48,7 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-/* GET GAMES */
+/* GAME DATA */
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
@@ -70,10 +70,11 @@ app.post("/update", (req, res) => {
 
     saveGames(games);
 
-    console.log("UPDATED:", name, "Players:", players);
+    console.log("UPDATED:", name, players);
 
     res.json({ ok: true });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("LunarX running"));
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🌙 LunarX running");
+});
