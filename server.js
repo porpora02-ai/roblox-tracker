@@ -8,40 +8,61 @@ app.use(express.json());
 
 const FILE = "./games.json";
 
-// LOAD
+// LOAD DATABASE
 function loadGames() {
+
     try {
+
         if (fs.existsSync(FILE)) {
-            return JSON.parse(fs.readFileSync(FILE));
+            return JSON.parse(
+                fs.readFileSync(FILE)
+            );
         }
+
     } catch {}
 
     return {};
 }
 
-// SAVE
+// SAVE DATABASE
 function saveGames(data) {
-    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+
+    fs.writeFileSync(
+        FILE,
+        JSON.stringify(data, null, 2)
+    );
 }
 
 let games = loadGames();
 
-// WEBSITE FILES
+// WEBSITE
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+
+    res.sendFile(
+        path.join(__dirname, "index.html")
+    );
 });
 
 app.get("/style.css", (req, res) => {
-    res.sendFile(path.join(__dirname, "style.css"));
+
+    res.sendFile(
+        path.join(__dirname, "style.css")
+    );
 });
 
 app.get("/app.js", (req, res) => {
-    res.sendFile(path.join(__dirname, "app.js"));
+
+    res.sendFile(
+        path.join(__dirname, "app.js")
+    );
 });
 
-// GET GAMES
+// SEND GAMES
 app.get("/games", (req, res) => {
-    res.json(Object.values(games));
+
+    res.json(
+        Object.values(games)
+    );
 });
 
 // UPDATE FROM ROBLOX
@@ -49,42 +70,52 @@ app.post("/update", async (req, res) => {
 
     try {
 
-        const { placeId, players } = req.body;
+        const {
+
+            placeId,
+            players,
+            name,
+            creator
+
+        } = req.body;
 
         if (!placeId) {
-            return res.json({ ok: false });
+
+            return res.json({
+                ok: false
+            });
         }
 
-        // FETCH GAME INFO
-        const gameRes = await fetch(
-            `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${placeId}`
-        );
+        // GET ICON
+        let icon = "";
 
-        const gameData = await gameRes.json();
+        try {
 
-        const info = gameData[0];
+            const thumbRes = await fetch(
+                `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
+            );
 
-        // FETCH ICON
-        const thumbRes = await fetch(
-            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
-        );
+            const thumbData =
+                await thumbRes.json();
 
-        const thumbData = await thumbRes.json();
+            icon =
+                thumbData?.data?.[0]?.imageUrl || "";
 
-        const icon =
-            thumbData?.data?.[0]?.imageUrl || "";
+        } catch {}
 
+        // SAVE GAME
         games[placeId] = {
 
             placeId,
 
-            players,
+            players:
+                Number(players) || 0,
 
             name:
-                info?.name || "Unknown Game",
+                name || "Unknown Game",
 
             creator:
-                info?.builder || "Unknown",
+                creator || "Unknown Creator",
 
             icon,
 
@@ -93,21 +124,32 @@ app.post("/update", async (req, res) => {
 
         saveGames(games);
 
-        console.log("Updated:", info?.name);
+        console.log(
+            "Updated:",
+            games[placeId]
+        );
 
-        res.json({ ok: true });
+        res.json({
+            ok: true
+        });
 
     } catch (err) {
 
         console.log(err);
 
-        res.json({ ok: false });
+        res.json({
+            ok: false
+        });
     }
 });
 
 // START
-const PORT = process.env.PORT || 3000;
+const PORT =
+    process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🌙 LunarX Running");
+
+    console.log(
+        "🌙 LunarX Running"
+    );
 });
