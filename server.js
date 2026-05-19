@@ -8,7 +8,7 @@ app.use(express.json());
 
 const FILE = "./games.json";
 
-// LOAD DATABASE
+// LOAD
 function loadGames() {
     try {
         if (fs.existsSync(FILE)) {
@@ -19,14 +19,14 @@ function loadGames() {
     return {};
 }
 
-// SAVE DATABASE
+// SAVE
 function saveGames(data) {
     fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
 let games = loadGames();
 
-// WEBSITE
+// WEBSITE FILES
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -39,45 +39,75 @@ app.get("/app.js", (req, res) => {
     res.sendFile(path.join(__dirname, "app.js"));
 });
 
-// SEND GAMES TO WEBSITE
+// GET GAMES
 app.get("/games", (req, res) => {
     res.json(Object.values(games));
 });
 
-// ROBLOX SENDS DATA HERE
-app.post("/update", (req, res) => {
+// UPDATE FROM ROBLOX
+app.post("/update", async (req, res) => {
 
-    const {
-        placeId,
-        name,
-        players,
-        icon,
-        creator
-    } = req.body;
+    try {
 
-    if (!placeId) {
-        return res.json({ ok: false });
+        const { placeId, players } = req.body;
+
+        if (!placeId) {
+            return res.json({ ok: false });
+        }
+
+        // FETCH GAME INFO
+        const gameRes = await fetch(
+            `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${placeId}`
+        );
+
+        const gameData = await gameRes.json();
+
+        const info = gameData[0];
+
+        // FETCH ICON
+        const thumbRes = await fetch(
+            `https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`
+        );
+
+        const thumbData = await thumbRes.json();
+
+        const icon =
+            thumbData?.data?.[0]?.imageUrl || "";
+
+        games[placeId] = {
+
+            placeId,
+
+            players,
+
+            name:
+                info?.name || "Unknown Game",
+
+            creator:
+                info?.builder || "Unknown",
+
+            icon,
+
+            updated: Date.now()
+        };
+
+        saveGames(games);
+
+        console.log("Updated:", info?.name);
+
+        res.json({ ok: true });
+
+    } catch (err) {
+
+        console.log(err);
+
+        res.json({ ok: false });
     }
-
-    games[placeId] = {
-        placeId,
-        name,
-        players,
-        icon,
-        creator,
-        updated: Date.now()
-    };
-
-    saveGames(games);
-
-    console.log("Updated:", name);
-
-    res.json({ ok: true });
 });
 
-// START SERVER
+// START
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🌙 LunarX Tracker Running");
+    console.log("🌙 LunarX Running");
 });
