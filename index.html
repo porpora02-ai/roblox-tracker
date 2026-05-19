@@ -2,8 +2,8 @@
 <html>
 
 <head>
-    <meta charset="UTF-8">
-    <title>LunarX</title>
+    <title>LunarX Tracker</title>
+
     <link rel="stylesheet" href="/style.css">
 </head>
 
@@ -12,60 +12,27 @@
 <div id="cursorGlow"></div>
 
 <div class="topbar">
-    <div class="logo">🌙 LunarX</div>
-</div>
 
-<!-- GAME LIST -->
-<div id="gameListPage">
+    <div class="logo">
+        🌙 LunarX
+    </div>
 
-    <div class="main">
-
-        <h1>Available Games</h1>
-
-        <input id="search" placeholder="Search games...">
-
-        <div id="gamesContainer"></div>
-
+    <div class="nav">
+        <button>Roblox Tracker</button>
     </div>
 
 </div>
 
-<!-- EXECUTOR -->
-<div id="gameExecPage" style="display:none">
+<div class="main">
 
-    <div class="main">
+    <h1>Tracked Games</h1>
 
-        <button class="join" onclick="goBack()">⬅ Back</button>
+    <input
+        id="search"
+        placeholder="Search games..."
+    >
 
-        <h1 id="selectedGameTitle">Game</h1>
-
-        <div class="executor">
-
-            <div class="leftPanel">
-                <h2>Players</h2>
-                <div id="playerList"></div>
-            </div>
-
-            <div class="rightPanel">
-
-                <h2>Commands</h2>
-
-                <button class="cmdBtn" onclick="selectCommand('R6')">
-                    🔄 Force R6
-                </button>
-
-                <p id="selectedPlayer">Selected Player: none</p>
-                <p id="selectedCommand">Selected Command: none</p>
-
-                <button class="join" onclick="executeCommand()">
-                    EXECUTE
-                </button>
-
-            </div>
-
-        </div>
-
-    </div>
+    <div id="gamesContainer"></div>
 
 </div>
 
