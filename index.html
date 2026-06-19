@@ -1,42 +1,53 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <title>LunarX Tracker</title>
-
     <link rel="stylesheet" href="/style.css">
 </head>
-
 <body>
 
 <div id="cursorGlow"></div>
 
 <div class="topbar">
-
-    <div class="logo">
-        🌙 LunarX
-    </div>
-
+    <div class="logo">🌙 LunarX</div>
     <div class="nav">
         <button>Roblox Tracker</button>
     </div>
-
 </div>
 
 <div class="main">
-
     <h1>Tracked Games</h1>
-
-    <input
-        id="search"
-        placeholder="Search games..."
-    >
-
+    <input id="search" placeholder="Search games...">
     <div id="gamesContainer"></div>
+</div>
 
+<!-- ── DEVELOPER PANEL OVERLAY ── -->
+<div id="devPanelOverlay">
+    <div id="devPanel">
+
+        <div class="panel-header">
+            <span id="panelTitle">Dev Panel</span>
+            <button class="panel-close" onclick="closeDevPanel()">✕</button>
+        </div>
+
+        <div id="consoleOutput"></div>
+
+        <div class="panel-input-area">
+            <textarea
+                id="codeInput"
+                placeholder="-- Enter Lua code here&#10;print('Hello from server!')"
+                spellcheck="false"
+                rows="4"
+            ></textarea>
+            <div class="panel-actions">
+                <span class="hint">Ctrl+Enter to run</span>
+                <button id="runBtn" onclick="runCommand()">▶ Run</button>
+            </div>
+        </div>
+
+    </div>
 </div>
 
 <script src="/app.js"></script>
-
 </body>
 </html>
