@@ -15,7 +15,6 @@ app.use(session({
     cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }
 }));
 
-// ─── FILE PATHS ───────────────────────────────────────────────────────────────
 const GAMES_FILE  = "./data/games.json";
 const USERS_FILE  = "./data/users.json";
 const TOKENS_FILE = "./data/tokens.json";
@@ -36,22 +35,20 @@ let users    = readJSON(USERS_FILE, {});
 let tokens   = readJSON(TOKENS_FILE, {});
 let commands = readJSON(CMDS_FILE, {});
 
-// ─── TIER CONFIG ──────────────────────────────────────────────────────────────
 const TIERS = {
-    none:         { label: "None",         maxPlayers: 0,        price: 0    },
-    bronze:       { label: "🥉 Bronze",     maxPlayers: 10,       price: 100  },
-    silver:       { label: "🥈 Silver",     maxPlayers: 80,       price: 200  },
-    gold:         { label: "🥇 Gold",       maxPlayers: 100,      price: 250  },
-    diamond:      { label: "💠 Diamond",    maxPlayers: 150,      price: 350  },
-    platinum:     { label: "👑 Platinum",   maxPlayers: 500,      price: 800  },
-    early_access: { label: "🚀 Early Access", maxPlayers: 0,      price: 1200, earlyOnly: true },
-    elite:        { label: "🔥 Elite",      maxPlayers: 1000,     price: 1800 },
-    absolute:     { label: "🌌 Absolute",   maxPlayers: Infinity, price: 2500 }
+    none:         { label: "None",           maxPlayers: 0        },
+    bronze:       { label: "🥉 Bronze",       maxPlayers: 10       },
+    silver:       { label: "🥈 Silver",       maxPlayers: 80       },
+    gold:         { label: "🥇 Gold",         maxPlayers: 100      },
+    diamond:      { label: "💠 Diamond",      maxPlayers: 150      },
+    platinum:     { label: "👑 Platinum",     maxPlayers: 500      },
+    early_access: { label: "🚀 Early Access", maxPlayers: 0, earlyOnly: true },
+    elite:        { label: "🔥 Elite",        maxPlayers: 1000     },
+    absolute:     { label: "🌌 Absolute",     maxPlayers: Infinity }
 };
 
 const OWNER = "dr.muffinn";
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function getUser(req) {
     return req.session.username ? users[req.session.username] : null;
 }
@@ -74,20 +71,20 @@ function requireOwner(req, res, next) {
     next();
 }
 
-// ─── STATIC FILES ─────────────────────────────────────────────────────────────
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public/index.html")));
-app.use(express.static(path.join(__dirname, "public")));
+// STATIC FILES — serve from root
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
+app.get("/app.js", (req, res) => res.sendFile(path.join(__dirname, "app.js")));
 
-// ─── AUTH ─────────────────────────────────────────────────────────────────────
+// AUTH
 app.post("/api/signup", async (req, res) => {
     const { email, username, password, dob } = req.body;
     if (!email || !username || !password || !dob)
         return res.json({ ok: false, error: "All fields required" });
     if (users[username])
         return res.json({ ok: false, error: "Username already taken" });
-    const emailTaken = Object.values(users).find(u => u.email === email);
-    if (emailTaken) return res.json({ ok: false, error: "Email already in use" });
-
+    if (Object.values(users).find(u => u.email === email))
+        return res.json({ ok: false, error: "Email already in use" });
     const hash = await bcrypt.hash(password, 10);
     users[username] = { email, username, password: hash, dob, tier: "none", joinedAt: Date.now() };
     writeJSON(USERS_FILE, users);
@@ -102,13 +99,10 @@ app.post("/api/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.json({ ok: false, error: "Invalid username or password" });
     req.session.username = username;
-    res.json({ ok: true, username, tier: user.tier });
+    res.json({ ok: true, username, tier: user.tier, isOwner: username === OWNER });
 });
 
-app.post("/api/logout", (req, res) => {
-    req.session.destroy();
-    res.json({ ok: true });
-});
+app.post("/api/logout", (req, res) => { req.session.destroy(); res.json({ ok: true }); });
 
 app.get("/api/me", (req, res) => {
     const user = getUser(req);
@@ -116,81 +110,57 @@ app.get("/api/me", (req, res) => {
     res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER });
 });
 
-// ─── GAMES ────────────────────────────────────────────────────────────────────
+// GAMES
 app.get("/api/games", requireLogin, (req, res) => {
     const user = getUser(req);
-    const visible = gamesForTier(user.tier);
-    res.json(visible);
+    res.json(gamesForTier(user.tier));
 });
 
-// ─── JOIN TOKEN ───────────────────────────────────────────────────────────────
+// JOIN TOKEN
 app.post("/api/join", requireLogin, (req, res) => {
     const { placeId } = req.body;
     if (!placeId) return res.json({ ok: false });
     const user = getUser(req);
-    const game = games[placeId];
-    if (!game) return res.json({ ok: false, error: "Game not found" });
-
-    // Check tier access
     const allowed = gamesForTier(user.tier);
     if (!allowed.find(g => g.placeId === placeId))
         return res.json({ ok: false, error: "Your tier does not include this game" });
-
-    // Generate join token
     const token = uuidv4();
     tokens[token] = { username: user.username, placeId, createdAt: Date.now(), used: false };
-    writeJSON(TOKENS_FILE, tokens);
-
-    // Clean old tokens (older than 10 mins)
     const now = Date.now();
-    Object.keys(tokens).forEach(k => {
-        if (now - tokens[k].createdAt > 600000) delete tokens[k];
-    });
+    Object.keys(tokens).forEach(k => { if (now - tokens[k].createdAt > 600000) delete tokens[k]; });
     writeJSON(TOKENS_FILE, tokens);
-
     res.json({ ok: true, token, placeId });
 });
 
-// ─── ROBLOX: UPDATE GAME ──────────────────────────────────────────────────────
+// ROBLOX UPDATE
 app.post("/api/update", async (req, res) => {
     try {
         const { placeId, players, name, creator, earlyAccess } = req.body;
         if (!placeId) return res.json({ ok: false });
-
         let icon = "";
         try {
             const r = await fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`);
             const d = await r.json();
             icon = d?.data?.[0]?.imageUrl || "";
         } catch {}
-
-        games[placeId] = {
-            placeId,
-            players: Number(players) || 0,
-            name: name || "Unknown Game",
-            creator: creator || "Unknown",
-            icon,
-            earlyAccess: earlyAccess === true || earlyAccess === "true",
-            updated: Date.now()
-        };
+        games[placeId] = { placeId, players: Number(players) || 0, name: name || "Unknown", creator: creator || "Unknown", icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: Date.now() };
         writeJSON(GAMES_FILE, games);
         res.json({ ok: true });
     } catch { res.json({ ok: false }); }
 });
 
-// ─── ROBLOX: VALIDATE JOIN TOKEN ─────────────────────────────────────────────
+// VALIDATE TOKEN
 app.post("/api/validate-token", (req, res) => {
     const { token, placeId } = req.body;
     if (!token || !placeId) return res.json({ ok: false });
     const t = tokens[token];
-    if (!t || t.used || t.placeId !== placeId) return res.json({ ok: false });
-    if (Date.now() - t.createdAt > 600000) return res.json({ ok: false });
+    if (!t || t.used || t.placeId !== placeId || Date.now() - t.createdAt > 600000) return res.json({ ok: false });
     t.used = true;
     writeJSON(TOKENS_FILE, tokens);
     res.json({ ok: true, username: t.username });
 });
 
-// ─── SCRIPT EXECUTION ─────────────────────────────────────────────────────────
+// SCRIPT EXECUTION
 app.post("/api/execute", requireLogin, (req, res) => {
     const { placeId, code } = req.body;
     if (!placeId || !code) return res.json({ ok: false });
@@ -229,10 +199,9 @@ app.get("/api/result", requireLogin, (req, res) => {
     res.json({ status: cmd.status, output: cmd.output });
 });
 
-// ─── OWNER PANEL ──────────────────────────────────────────────────────────────
+// OWNER PANEL
 app.get("/api/owner/users", requireOwner, (req, res) => {
-    const list = Object.values(users).map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt }));
-    res.json(list);
+    res.json(Object.values(users).map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt })));
 });
 
 app.post("/api/owner/set-tier", requireOwner, (req, res) => {
@@ -244,6 +213,5 @@ app.post("/api/owner/set-tier", requireOwner, (req, res) => {
     res.json({ ok: true });
 });
 
-// ─── START ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("🟢 Vantix running on port", PORT));
