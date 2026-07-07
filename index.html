@@ -1,24 +1,196 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>LunarX Tracker</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vantix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
 <div id="cursorGlow"></div>
 
-<div class="topbar">
-    <div class="logo">🌙 LunarX</div>
-    <div class="nav">
-        <button>Roblox Tracker</button>
+<!-- ── LANDING PAGE ── -->
+<div id="landingPage" class="page">
+    <nav class="land-nav">
+        <div class="logo">⬡ VANTIX</div>
+        <div class="land-nav-btns">
+            <button onclick="showPage('loginPage')" class="btn-ghost">Log In</button>
+            <button onclick="showPage('signupPage')" class="btn-primary">Get Started</button>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <div class="hero-badge">🎮 Roblox Game Intelligence</div>
+        <h1 class="hero-title">Track Every<br><span class="green-text">Active Server</span></h1>
+        <p class="hero-sub">Real-time Roblox game tracking with tier-based access. Find low-population servers and get the edge you need.</p>
+        <div class="hero-btns">
+            <button onclick="showPage('signupPage')" class="btn-primary btn-lg">Create Account</button>
+            <button onclick="showPage('loginPage')" class="btn-ghost btn-lg">Log In</button>
+        </div>
+        <div class="tier-preview">
+            <div class="tier-card-sm">🥉 Bronze<span>10 players</span></div>
+            <div class="tier-card-sm">🥈 Silver<span>80 players</span></div>
+            <div class="tier-card-sm">🥇 Gold<span>100 players</span></div>
+            <div class="tier-card-sm">💠 Diamond<span>150 players</span></div>
+            <div class="tier-card-sm best">🌌 Absolute<span>No limit</span></div>
+        </div>
     </div>
 </div>
 
-<div class="main">
-    <h1>Tracked Games</h1>
-    <input id="search" placeholder="Search games...">
-    <div id="gamesContainer"></div>
+<!-- ── SIGN UP ── -->
+<div id="signupPage" class="page auth-page hidden">
+    <div class="auth-box">
+        <div class="logo auth-logo">⬡ VANTIX</div>
+        <h2>Create Account</h2>
+        <p class="auth-sub">Join Vantix to start tracking</p>
+        <div id="signupError" class="error-msg hidden"></div>
+        <input id="su-email" type="email" placeholder="Email address" class="inp">
+        <input id="su-username" type="text" placeholder="Username" class="inp">
+        <input id="su-password" type="password" placeholder="Password" class="inp">
+        <input id="su-dob" type="date" placeholder="Date of birth" class="inp">
+        <button onclick="doSignup()" class="btn-primary full">Create Account</button>
+        <p class="auth-switch">Already have an account? <a onclick="showPage('loginPage')">Log in</a></p>
+        <p class="auth-switch"><a onclick="showPage('landingPage')">← Back to home</a></p>
+    </div>
+</div>
+
+<!-- ── LOGIN ── -->
+<div id="loginPage" class="page auth-page hidden">
+    <div class="auth-box">
+        <div class="logo auth-logo">⬡ VANTIX</div>
+        <h2>Welcome Back</h2>
+        <p class="auth-sub">Log in to your Vantix account</p>
+        <div id="loginError" class="error-msg hidden"></div>
+        <input id="li-username" type="text" placeholder="Username" class="inp">
+        <input id="li-password" type="password" placeholder="Password" class="inp">
+        <button onclick="doLogin()" class="btn-primary full">Log In</button>
+        <p class="auth-switch">No account? <a onclick="showPage('signupPage')">Sign up</a></p>
+        <p class="auth-switch"><a onclick="showPage('landingPage')">← Back to home</a></p>
+    </div>
+</div>
+
+<!-- ── MAIN APP ── -->
+<div id="appPage" class="page hidden">
+
+    <!-- Topbar -->
+    <div class="topbar">
+        <div class="logo">⬡ VANTIX</div>
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('games')">🎮 Games</button>
+            <button class="tab" onclick="switchTab('upgrade')">⬆ Upgrade</button>
+            <button class="tab owner-tab hidden" id="ownerTabBtn" onclick="switchTab('owner')">👑 Owner Panel</button>
+        </div>
+        <div class="topbar-right">
+            <span id="tierBadge" class="tier-badge"></span>
+            <span id="userLabel" class="user-label"></span>
+            <button onclick="doLogout()" class="btn-ghost sm">Log Out</button>
+        </div>
+    </div>
+
+    <!-- GAMES TAB -->
+    <div id="tab-games" class="tab-content">
+        <div class="tab-header">
+            <h2>Tracked Games</h2>
+            <input id="gameSearch" placeholder="Search games..." class="search-inp" oninput="renderGames()">
+        </div>
+        <div id="gamesGrid"></div>
+    </div>
+
+    <!-- UPGRADE TAB -->
+    <div id="tab-upgrade" class="tab-content hidden">
+        <div class="tab-header">
+            <h2>Upgrade Your Tier</h2>
+            <p class="tab-sub">Purchase a tier to unlock more games. DM <strong>#dr.muffinn</strong> on Discord or open a ticket after purchasing.</p>
+        </div>
+        <div class="tiers-grid">
+            <div class="tier-card">
+                <div class="tier-icon">🥉</div>
+                <div class="tier-name">Bronze</div>
+                <div class="tier-price">100 <span>R$</span></div>
+                <div class="tier-desc">Games with under 10 active players</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">🥈</div>
+                <div class="tier-name">Silver</div>
+                <div class="tier-price">200 <span>R$</span></div>
+                <div class="tier-desc">Games with under 80 active players</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">🥇</div>
+                <div class="tier-name">Gold</div>
+                <div class="tier-price">250 <span>R$</span></div>
+                <div class="tier-desc">Games with under 100 active players</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">💠</div>
+                <div class="tier-name">Diamond</div>
+                <div class="tier-price">350 <span>R$</span></div>
+                <div class="tier-desc">Games with under 150 active players</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">👑</div>
+                <div class="tier-name">Platinum</div>
+                <div class="tier-price">800 <span>R$</span></div>
+                <div class="tier-desc">Games with under 500 active players</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">🚀</div>
+                <div class="tier-name">Early Access</div>
+                <div class="tier-price">1,200 <span>R$</span></div>
+                <div class="tier-desc">Early Access games only</div>
+            </div>
+            <div class="tier-card">
+                <div class="tier-icon">🔥</div>
+                <div class="tier-name">Elite</div>
+                <div class="tier-price">1,800 <span>R$</span></div>
+                <div class="tier-desc">Games with under 1,000 active players</div>
+            </div>
+            <div class="tier-card best-tier">
+                <div class="tier-badge-best">⭐ BEST VALUE</div>
+                <div class="tier-icon">🌌</div>
+                <div class="tier-name">Absolute</div>
+                <div class="tier-price">2,500 <span>R$</span></div>
+                <div class="tier-desc">All games. No restrictions. Highest tier.</div>
+            </div>
+        </div>
+        <div class="upgrade-cta">
+            <p>To purchase, DM <strong>#dr.muffinn</strong> on Discord or open a support ticket.</p>
+        </div>
+    </div>
+
+    <!-- OWNER PANEL TAB -->
+    <div id="tab-owner" class="tab-content hidden">
+        <div class="tab-header">
+            <h2>👑 Owner Panel</h2>
+            <p class="tab-sub">Manage user tiers</p>
+        </div>
+        <div class="owner-search-row">
+            <input id="ownerSearch" placeholder="Search users..." class="search-inp" oninput="filterOwnerUsers()">
+        </div>
+        <div id="ownerUsersTable"></div>
+    </div>
+
+</div>
+
+<!-- ── SCRIPT EXECUTION MODAL ── -->
+<div id="execModal" class="modal-overlay hidden">
+    <div class="modal">
+        <div class="modal-header">
+            <span id="execModalTitle">Script Execution</span>
+            <button onclick="closeExecModal()" class="modal-close">✕</button>
+        </div>
+        <div id="execOutput"></div>
+        <div class="modal-input-area">
+            <textarea id="execCode" placeholder="-- Enter Lua code&#10;print('Hello from server!')" rows="4" spellcheck="false"></textarea>
+            <div class="modal-actions">
+                <span class="hint">Ctrl+Enter to run</span>
+                <button id="execRunBtn" onclick="runExec()">▶ Run</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="/app.js"></script>
