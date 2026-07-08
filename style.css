@@ -320,6 +320,37 @@ body {
 }
 .no-games h3 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
 
+/* TRACKING */
+.tracking-panel {
+    max-width: 560px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+}
+.tracking-panel label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--green);
+    font-size: 13px;
+    font-family: 'Space Mono', monospace;
+}
+.tracking-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.tracking-row .search-inp {
+    margin-top: 0;
+    flex: 1;
+}
+.track-status {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 13px;
+}
+.track-status.error { color: #ff7777; }
+
 /* ── TIERS GRID ── */
 .tiers-grid {
     display: grid;
