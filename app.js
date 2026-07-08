@@ -11,6 +11,7 @@ let allGames     = [];
 let execPlaceId  = null;
 let ownerUsers   = [];
 let gamesTimer   = null;
+let trackingTimer = null;
 
 // ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -86,6 +87,8 @@ async function doLogout() {
     allGames = [];
     if (gamesTimer) clearInterval(gamesTimer);
     gamesTimer = null;
+    if (trackingTimer) clearInterval(trackingTimer);
+    trackingTimer = null;
     document.getElementById("ownerTabBtn").classList.add("hidden");
     showPage("landingPage");
 }
@@ -128,6 +131,8 @@ function enterApp() {
     loadTracking();
     if (gamesTimer) clearInterval(gamesTimer);
     gamesTimer = setInterval(loadGames, 5000);
+    if (trackingTimer) clearInterval(trackingTimer);
+    trackingTimer = setInterval(loadTracking, 5000);
 }
 
 // ─── GAMES ────────────────────────────────────────────────────────────────────
@@ -164,7 +169,7 @@ function renderGames() {
                 </div>
                 <div class="game-actions">
                     <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">▶ Join Game</button>
-                    ${isOwnerAccount() ? `<button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">💻 Execute</button>` : ""}
+                    <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">💻 Execute</button>
                 </div>
             </div>
         </div>
@@ -183,8 +188,7 @@ async function loadTracking() {
         if (data.ok) {
             input.value = data.robloxUsername || "";
             currentUser.robloxUsername = data.robloxUsername || "";
-            status.textContent = data.robloxUsername ? `Watching for ${data.robloxUsername}.` : "No Roblox username set.";
-            status.classList.remove("error");
+            renderTrackingStatus(data);
         }
     } catch {
         status.textContent = "Could not load tracking settings.";
@@ -207,11 +211,31 @@ async function saveTracking() {
     if (data.ok) {
         input.value = data.robloxUsername || "";
         currentUser.robloxUsername = data.robloxUsername || "";
-        status.textContent = data.robloxUsername ? `Watching for ${data.robloxUsername}.` : "Tracking cleared.";
+        renderTrackingStatus(data);
     } else {
         status.textContent = data.error || "Could not save tracking settings.";
         status.classList.add("error");
     }
+}
+
+function renderTrackingStatus(data) {
+    const status = document.getElementById("trackStatus");
+    if (!status) return;
+    status.classList.remove("error", "online", "offline");
+    if (!data.robloxUsername) {
+        status.textContent = "No Roblox username set.";
+        status.classList.add("offline");
+        return;
+    }
+    if (data.online) {
+        status.textContent = `Online now in ${data.gameName || "a connected game"}${data.placeId ? ` (${data.placeId})` : ""}.`;
+        status.classList.add("online");
+        return;
+    }
+    status.textContent = data.lastSeen
+        ? `Offline. Last seen ${new Date(data.lastSeen).toLocaleString()}.`
+        : `Watching for ${data.robloxUsername}. Offline right now.`;
+    status.classList.add("offline");
 }
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
