@@ -309,7 +309,7 @@ async function runExec() {
         return;
     }
 
-    appendExecLog("⏳ Sent. Waiting for response...", "info");
+    appendExecLog("⏳ Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.", "info");
     pollExecResult(data.id);
 
     btn.disabled = false;
@@ -318,8 +318,8 @@ async function runExec() {
 }
 
 async function pollExecResult(cmdId, attempts = 0) {
-    if (attempts > 30) {
-        appendExecLog("⚠️ No response after 15s. Server may be offline.", "warn");
+    if (attempts > 120) {
+        appendExecLog("⚠️ No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.", "warn");
         return;
     }
     await new Promise(r => setTimeout(r, 500));
@@ -329,6 +329,9 @@ async function pollExecResult(cmdId, attempts = 0) {
         if (data.status === "done") {
             appendExecLog("✅ " + data.output, "output");
         } else {
+            if (attempts > 0 && attempts % 20 === 0) {
+                appendExecLog("⏳ Still waiting for Roblox to post the result...", "info");
+            }
             pollExecResult(cmdId, attempts + 1);
         }
     } catch {
