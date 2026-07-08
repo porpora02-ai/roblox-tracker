@@ -348,8 +348,15 @@ app.post("/api/execute", requireLogin, async (req, res) => {
             return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
 
         const id = uuidv4();
-        await Command.create({ id, placeId, targetUsername: robloxUsername, code, status: "pending", requestedBy: req.session.username });
-        await Command.updateOne({ id, placeId }, { jobId: status.jobId });
+        await Command.create({
+            id,
+            placeId,
+            jobId: status.jobId,
+            targetUsername: robloxUsername,
+            code,
+            status: "pending",
+            requestedBy: req.session.username
+        });
         res.json({ ok: true, id });
     } catch (e) {
         res.json({ ok: false, error: "Could not send execute command" });
