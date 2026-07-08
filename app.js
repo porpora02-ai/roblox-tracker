@@ -169,56 +169,11 @@ function renderGames() {
                 </div>
                 <div class="game-actions">
                     <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">▶ Join Game</button>
-                    <button class="btn-exec" onclick="giveGui('${g.placeId}', '${g.name}')">Give GUI</button>
+                    <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">Execute</button>
                 </div>
             </div>
         </div>
     `).join("");
-}
-
-async function giveGui(placeId, name) {
-    const tracking = await fetch("/api/tracking").then(r => r.json()).catch(() => null);
-    if (!tracking?.ok || !tracking.robloxUsername) {
-        alert("Set your Roblox username in the Tracking tab first.");
-        return;
-    }
-    if (!tracking.online || String(tracking.placeId) !== String(placeId)) {
-        alert(`${tracking.robloxUsername} is not online in "${name}" right now.`);
-        return;
-    }
-    const confirmed = confirm(`We see ${tracking.robloxUsername} is in "${name}". Would you like ${tracking.robloxUsername} to receive the GUI?`);
-    if (!confirmed) return;
-
-    const res = await fetch("/api/give-gui", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeId })
-    });
-    const data = await res.json();
-    if (data.ok) {
-        pollGiveGuiResult(placeId, data.id, data.username);
-    } else {
-        alert(data.error || "Could not send GUI.");
-    }
-}
-
-async function pollGiveGuiResult(placeId, cmdId, username, attempts = 0) {
-    if (attempts > 30) {
-        alert(`GUI command was sent for ${username}, but the Roblox server did not answer yet.`);
-        return;
-    }
-    await new Promise(r => setTimeout(r, 500));
-    try {
-        const res = await fetch(`/api/result?placeId=${placeId}&id=${cmdId}`);
-        const data = await res.json();
-        if (data.status === "done") {
-            alert(data.output || `GUI sent to ${username}.`);
-        } else {
-            pollGiveGuiResult(placeId, cmdId, username, attempts + 1);
-        }
-    } catch {
-        pollGiveGuiResult(placeId, cmdId, username, attempts + 1);
-    }
 }
 
 // USER TRACKING
