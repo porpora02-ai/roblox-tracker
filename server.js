@@ -36,6 +36,8 @@ const tokenSchema = new mongoose.Schema({
 const commandSchema = new mongoose.Schema({
     id:          { type: String, required: true },
     placeId:     String,
+    action:      { type: String, default: "execute" },
+    targetUsername: String,
     code:        String,
     status:      { type: String, default: "pending" },
     output:      String,
@@ -328,13 +330,45 @@ app.post("/api/execute", requireLogin, async (req, res) => {
     } catch { res.json({ ok: false }); }
 });
 
+app.post("/api/give-gui", requireLogin, async (req, res) => {
+    try {
+        const { placeId } = req.body;
+        if (!placeId) return res.json({ ok: false, error: "Missing placeId" });
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        const robloxUsername = cleanRobloxUsername(user.robloxUsername);
+        if (!robloxUsername) return res.json({ ok: false, error: "Set your Roblox username in the Tracking tab first" });
+
+        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const status = await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
+        const fresh = status?.lastSeen && Date.now() - new Date(status.lastSeen).getTime() < 30000;
+        if (!status?.online || !fresh)
+            return res.json({ ok: false, error: `${robloxUsername} is not online in a connected game right now` });
+        if (String(status.placeId) !== String(placeId))
+            return res.json({ ok: false, error: `${robloxUsername} is online, but not in this game` });
+
+        const id = uuidv4();
+        await Command.create({
+            id,
+            placeId,
+            action: "giveGui",
+            targetUsername: robloxUsername,
+            status: "pending",
+            requestedBy: req.session.username
+        });
+        res.json({ ok: true, id, username: robloxUsername });
+    } catch (e) {
+        res.json({ ok: false, error: "Could not send GUI command" });
+    }
+});
+
 app.get("/api/poll", async (req, res) => {
     try {
         const { placeId } = req.query;
         if (!placeId) return res.json({ commands: [] });
         const cmds = await Command.find({ placeId, status: "pending" });
         await Command.updateMany({ placeId, status: "pending" }, { status: "sent" });
-        res.json({ commands: cmds.map(c => ({ id: c.id, code: c.code })) });
+        res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
     } catch { res.json({ commands: [] }); }
 });
 
