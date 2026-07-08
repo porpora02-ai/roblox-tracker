@@ -22,7 +22,10 @@ body {
     overflow-x: hidden;
 }
 
-.hidden { display: none !important; }
+.hidden,
+.page.hidden {
+    display: none !important;
+}
 .page { min-height: 100vh; }
 
 /* CURSOR GLOW */
@@ -142,7 +145,7 @@ body {
 
 /* ── AUTH ── */
 .auth-page {
-    display: flex !important;
+    display: flex;
     justify-content: center;
     align-items: center;
     padding: 40px 20px;
