@@ -124,8 +124,7 @@ app.post("/api/signup", async (req, res) => {
         const hash = await bcrypt.hash(password, 10);
         await User.create({ email: cleanEmail, username: cleanUsername, password: hash, dob, tier: "none" });
 
-        req.session.username = cleanUsername;
-        req.session.save(() => res.json({ ok: true, username: cleanUsername, tier: "none", isOwner: cleanUsername === OWNER }));
+        res.json({ ok: true, username: cleanUsername });
     } catch (e) {
         console.error("Signup error:", e.message);
         if (e.code === 11000) {
