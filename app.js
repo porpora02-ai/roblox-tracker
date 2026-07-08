@@ -42,8 +42,11 @@ async function doSignup() {
     });
     const data = await res.json();
     if (data.ok) {
-        currentUser = { username: data.username, tier: data.tier };
-        enterApp();
+        alert("Account created successfully. Please log in.");
+        document.getElementById("li-username").value = username;
+        document.getElementById("li-password").value = "";
+        errEl.classList.add("hidden");
+        showPage("loginPage");
     } else {
         errEl.textContent = data.error;
         errEl.classList.remove("hidden");
