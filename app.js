@@ -10,6 +10,7 @@ let currentUser  = null;
 let allGames     = [];
 let execPlaceId  = null;
 let ownerUsers   = [];
+let gamesTimer   = null;
 
 // ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -18,6 +19,7 @@ function showPage(id) {
 }
 
 function switchTab(tab) {
+    if (tab === "owner" && !isOwnerAccount()) return switchTab("games");
     document.querySelectorAll(".tab-content").forEach(t => t.classList.add("hidden"));
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     document.getElementById("tab-" + tab).classList.remove("hidden");
@@ -25,6 +27,11 @@ function switchTab(tab) {
         if (t.getAttribute("onclick") === `switchTab('${tab}')`) t.classList.add("active");
     });
     if (tab === "owner") loadOwnerUsers();
+    if (tab === "tracking") loadTracking();
+}
+
+function isOwnerAccount() {
+    return currentUser && currentUser.username === "dr.muffinn" && currentUser.isOwner === true;
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -65,7 +72,7 @@ async function doLogin() {
     });
     const data = await res.json();
     if (data.ok) {
-        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner };
+        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
         enterApp();
     } else {
         errEl.textContent = data.error;
@@ -77,6 +84,9 @@ async function doLogout() {
     await fetch("/api/logout", { method: "POST" });
     currentUser = null;
     allGames = [];
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = null;
+    document.getElementById("ownerTabBtn").classList.add("hidden");
     showPage("landingPage");
 }
 
@@ -84,7 +94,7 @@ async function checkSession() {
     const res  = await fetch("/api/me");
     const data = await res.json();
     if (data.ok) {
-        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner };
+        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
         enterApp();
     } else {
         showPage("landingPage");
@@ -109,12 +119,15 @@ function enterApp() {
     document.getElementById("userLabel").textContent = currentUser.username;
     document.getElementById("tierBadge").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
 
-    if (currentUser.isOwner || currentUser.username === "dr.muffinn") {
+    document.getElementById("ownerTabBtn").classList.add("hidden");
+    if (isOwnerAccount()) {
         document.getElementById("ownerTabBtn").classList.remove("hidden");
     }
 
     loadGames();
-    setInterval(loadGames, 5000);
+    loadTracking();
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = setInterval(loadGames, 5000);
 }
 
 // ─── GAMES ────────────────────────────────────────────────────────────────────
@@ -151,11 +164,54 @@ function renderGames() {
                 </div>
                 <div class="game-actions">
                     <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">▶ Join Game</button>
-                    <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">💻 Execute</button>
+                    ${isOwnerAccount() ? `<button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">💻 Execute</button>` : ""}
                 </div>
             </div>
         </div>
     `).join("");
+}
+
+// USER TRACKING
+async function loadTracking() {
+    if (!currentUser) return;
+    const input = document.getElementById("trackUsername");
+    const status = document.getElementById("trackStatus");
+    if (!input || !status) return;
+    try {
+        const res = await fetch("/api/tracking");
+        const data = await res.json();
+        if (data.ok) {
+            input.value = data.robloxUsername || "";
+            currentUser.robloxUsername = data.robloxUsername || "";
+            status.textContent = data.robloxUsername ? `Watching for ${data.robloxUsername}.` : "No Roblox username set.";
+            status.classList.remove("error");
+        }
+    } catch {
+        status.textContent = "Could not load tracking settings.";
+        status.classList.add("error");
+    }
+}
+
+async function saveTracking() {
+    const input = document.getElementById("trackUsername");
+    const status = document.getElementById("trackStatus");
+    const robloxUsername = input.value.trim().replace(/^@/, "");
+    status.textContent = "Saving...";
+    status.classList.remove("error");
+    const res = await fetch("/api/tracking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ robloxUsername })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        input.value = data.robloxUsername || "";
+        currentUser.robloxUsername = data.robloxUsername || "";
+        status.textContent = data.robloxUsername ? `Watching for ${data.robloxUsername}.` : "Tracking cleared.";
+    } else {
+        status.textContent = data.error || "Could not save tracking settings.";
+        status.classList.add("error");
+    }
 }
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
