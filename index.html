@@ -81,6 +81,7 @@
         <div class="logo">⬡ VANTIX</div>
         <div class="tabs">
             <button class="tab active" onclick="switchTab('games')">🎮 Games</button>
+            <button class="tab" onclick="switchTab('tracking')">🎯 Tracking</button>
             <button class="tab" onclick="switchTab('upgrade')">⬆ Upgrade</button>
             <button class="tab owner-tab hidden" id="ownerTabBtn" onclick="switchTab('owner')">👑 Owner Panel</button>
         </div>
@@ -98,6 +99,22 @@
             <input id="gameSearch" placeholder="Search games..." class="search-inp" oninput="renderGames()">
         </div>
         <div id="gamesGrid"></div>
+    </div>
+
+    <!-- TRACKING TAB -->
+    <div id="tab-tracking" class="tab-content hidden">
+        <div class="tab-header">
+            <h2>Player Tracking</h2>
+            <p class="tab-sub">Set the Roblox username Vantix should recognize when they join a connected game.</p>
+        </div>
+        <div class="tracking-panel">
+            <label for="trackUsername">Roblox Username</label>
+            <div class="tracking-row">
+                <input id="trackUsername" placeholder="Roblox username" class="search-inp" maxlength="20">
+                <button onclick="saveTracking()" class="btn-primary">Save</button>
+            </div>
+            <p id="trackStatus" class="track-status">No Roblox username set.</p>
+        </div>
     </div>
 
     <!-- UPGRADE TAB -->
