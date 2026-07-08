@@ -14,6 +14,7 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     dob:      String,
     tier:     { type: String, default: "none" },
+    robloxUsername: String,
     joinedAt: { type: Date, default: Date.now }
 });
 const gameSchema = new mongoose.Schema({
@@ -94,11 +95,15 @@ function requireOwner(req, res, next) {
     if (req.session.username !== OWNER) return res.status(403).json({ ok: false, error: "Forbidden" });
     next();
 }
+function cleanRobloxUsername(username) {
+    return String(username || "").trim().replace(/^@/, "");
+}
 
 // STATIC
 app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
 app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js")));
+app.get("/api/ping",  (req, res) => res.json({ ok: true }));
 
 // RESET (remove after use)
 app.get("/api/reset-users", async (req, res) => {
@@ -145,7 +150,7 @@ app.post("/api/login", async (req, res) => {
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.json({ ok: false, error: "Invalid username or password" });
         req.session.username = user.username;
-        req.session.save(() => res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER }));
+        req.session.save(() => res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" }));
     } catch (e) {
         console.error("Login error:", e.message);
         res.json({ ok: false, error: "Login failed: " + e.message });
@@ -161,8 +166,36 @@ app.get("/api/me", async (req, res) => {
     try {
         const user = await User.findOne({ username: req.session.username });
         if (!user) return res.json({ ok: false });
-        res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER });
+        res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" });
     } catch { res.json({ ok: false }); }
+});
+
+// TRACKING
+app.get("/api/tracking", requireLogin, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({ ok: true, robloxUsername: user.robloxUsername || "" });
+    } catch {
+        res.json({ ok: false, error: "Could not load tracking settings" });
+    }
+});
+
+app.post("/api/tracking", requireLogin, async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
+        if (robloxUsername && !/^[A-Za-z0-9_]{3,20}$/.test(robloxUsername))
+            return res.json({ ok: false, error: "Enter a valid Roblox username" });
+        const user = await User.findOneAndUpdate(
+            { username: req.session.username },
+            { robloxUsername },
+            { new: true }
+        );
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({ ok: true, robloxUsername: user.robloxUsername || "" });
+    } catch {
+        res.json({ ok: false, error: "Could not save tracking settings" });
+    }
 });
 
 // GAMES
@@ -221,8 +254,20 @@ app.post("/api/validate-token", async (req, res) => {
     } catch { res.json({ ok: false }); }
 });
 
+app.post("/api/check-player", async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.username);
+        if (!robloxUsername) return res.json({ ok: false });
+        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const user = await User.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
+        res.json({ ok: !!user });
+    } catch {
+        res.json({ ok: false });
+    }
+});
+
 // EXECUTE
-app.post("/api/execute", requireLogin, async (req, res) => {
+app.post("/api/execute", requireOwner, async (req, res) => {
     try {
         const { placeId, code } = req.body;
         if (!placeId || !code) return res.json({ ok: false });
@@ -251,7 +296,7 @@ app.post("/api/result", async (req, res) => {
     } catch { res.json({ ok: false }); }
 });
 
-app.get("/api/result", requireLogin, async (req, res) => {
+app.get("/api/result", requireOwner, async (req, res) => {
     try {
         const { placeId, id } = req.query;
         if (!placeId || !id) return res.json({ status: "unknown" });
