@@ -42,11 +42,21 @@ const commandSchema = new mongoose.Schema({
     requestedBy: String,
     ts:          { type: Date, default: Date.now, expires: 3600 }
 });
+const playerStatusSchema = new mongoose.Schema({
+    robloxUsername: { type: String, required: true, unique: true },
+    displayName:    String,
+    userId:         Number,
+    placeId:        String,
+    gameName:       String,
+    online:         { type: Boolean, default: false },
+    lastSeen:       { type: Date, default: Date.now }
+});
 
 const User    = mongoose.model("User",    userSchema);
 const Game    = mongoose.model("Game",    gameSchema);
 const Token   = mongoose.model("Token",   tokenSchema);
 const Command = mongoose.model("Command", commandSchema);
+const PlayerStatus = mongoose.model("PlayerStatus", playerStatusSchema);
 
 const TIERS = {
     none:         { maxPlayers: 0        },
@@ -97,6 +107,18 @@ function requireOwner(req, res, next) {
 }
 function cleanRobloxUsername(username) {
     return String(username || "").trim().replace(/^@/, "");
+}
+function trackingPayload(user, status) {
+    const lastSeen = status?.lastSeen || null;
+    const isFresh = lastSeen && Date.now() - new Date(lastSeen).getTime() < 30000;
+    return {
+        ok: true,
+        robloxUsername: user.robloxUsername || "",
+        online: !!(status?.online && isFresh),
+        placeId: status?.placeId || "",
+        gameName: status?.gameName || "",
+        lastSeen
+    };
 }
 
 // STATIC
@@ -175,7 +197,10 @@ app.get("/api/tracking", requireLogin, async (req, res) => {
     try {
         const user = await User.findOne({ username: req.session.username });
         if (!user) return res.json({ ok: false, error: "User not found" });
-        res.json({ ok: true, robloxUsername: user.robloxUsername || "" });
+        const status = user.robloxUsername
+            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
+            : null;
+        res.json(trackingPayload(user, status));
     } catch {
         res.json({ ok: false, error: "Could not load tracking settings" });
     }
@@ -192,7 +217,10 @@ app.post("/api/tracking", requireLogin, async (req, res) => {
             { new: true }
         );
         if (!user) return res.json({ ok: false, error: "User not found" });
-        res.json({ ok: true, robloxUsername: user.robloxUsername || "" });
+        const status = user.robloxUsername
+            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
+            : null;
+        res.json(trackingPayload(user, status));
     } catch {
         res.json({ ok: false, error: "Could not save tracking settings" });
     }
@@ -266,8 +294,31 @@ app.post("/api/check-player", async (req, res) => {
     }
 });
 
+app.post("/api/player-status", async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.username);
+        if (!robloxUsername) return res.json({ ok: false });
+        await PlayerStatus.findOneAndUpdate(
+            { robloxUsername },
+            {
+                robloxUsername,
+                displayName: req.body.displayName || "",
+                userId: Number(req.body.userId) || 0,
+                placeId: String(req.body.placeId || ""),
+                gameName: String(req.body.gameName || ""),
+                online: req.body.online === true || req.body.online === "true",
+                lastSeen: new Date()
+            },
+            { upsert: true, new: true }
+        );
+        res.json({ ok: true });
+    } catch {
+        res.json({ ok: false });
+    }
+});
+
 // EXECUTE
-app.post("/api/execute", requireOwner, async (req, res) => {
+app.post("/api/execute", requireLogin, async (req, res) => {
     try {
         const { placeId, code } = req.body;
         if (!placeId || !code) return res.json({ ok: false });
@@ -296,7 +347,7 @@ app.post("/api/result", async (req, res) => {
     } catch { res.json({ ok: false }); }
 });
 
-app.get("/api/result", requireOwner, async (req, res) => {
+app.get("/api/result", requireLogin, async (req, res) => {
     try {
         const { placeId, id } = req.query;
         if (!placeId || !id) return res.json({ status: "unknown" });
