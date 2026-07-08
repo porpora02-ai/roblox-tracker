@@ -123,6 +123,61 @@ function trackingPayload(user, status) {
     };
 }
 
+async function fetchRobloxJson(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+        const response = await fetch(url, {
+            headers: { "User-Agent": "Vantix/1.0" },
+            signal: controller.signal
+        });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function resolveRobloxGameInfo(placeId, fallback = {}) {
+    const cleanPlaceId = String(placeId || "").trim();
+    let name = String(fallback.name || "").trim();
+    let creator = String(fallback.creator || "").trim();
+    let players = Number(fallback.players) || 0;
+    let icon = String(fallback.icon || "").trim();
+    let universeId = "";
+
+    const universeData = await fetchRobloxJson(`https://apis.roblox.com/universes/v1/places/${encodeURIComponent(cleanPlaceId)}/universe`);
+    universeId = String(universeData?.universeId || "");
+
+    if (universeId) {
+        const gameData = await fetchRobloxJson(`https://games.roblox.com/v1/games?universeIds=${encodeURIComponent(universeId)}`);
+        const info = gameData?.data?.[0];
+        if (info) {
+            if (info.name) name = info.name;
+            if (info.creator?.name) creator = info.creator.name;
+            if (Number.isFinite(Number(info.playing))) players = Number(info.playing);
+        }
+
+        const iconData = await fetchRobloxJson(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${encodeURIComponent(universeId)}&size=512x512&format=Png&isCircular=false`);
+        icon = iconData?.data?.[0]?.imageUrl || icon;
+    }
+
+    if (!icon) {
+        const placeIconData = await fetchRobloxJson(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${encodeURIComponent(cleanPlaceId)}&size=512x512&format=Png&isCircular=false`);
+        icon = placeIconData?.data?.[0]?.imageUrl || "";
+    }
+
+    return {
+        name: name && name.toLowerCase() !== "game" ? name : "Unknown Game",
+        creator: creator || "Unknown",
+        players,
+        icon,
+        universeId
+    };
+}
+
 // STATIC
 app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
@@ -256,19 +311,23 @@ app.post("/api/update", async (req, res) => {
     try {
         const { placeId, players, name, creator, earlyAccess } = req.body;
         if (!placeId) return res.json({ ok: false });
-        let icon = "";
-        try {
-            const r = await fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`);
-            const d = await r.json();
-            icon = d?.data?.[0]?.imageUrl || "";
-        } catch {}
+        const existing = await Game.findOne({ placeId });
+        const info = await resolveRobloxGameInfo(placeId, {
+            name,
+            creator,
+            players,
+            icon: existing?.icon || ""
+        });
         await Game.findOneAndUpdate(
             { placeId },
-            { placeId, players: Number(players) || 0, name: name || "Unknown", creator: creator || "Unknown", icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
+            { placeId, players: info.players, name: info.name, creator: info.creator, icon: info.icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
             { upsert: true, new: true }
         );
         res.json({ ok: true });
-    } catch (e) { res.json({ ok: false }); }
+    } catch (e) {
+        console.error("Update error:", e.message);
+        res.json({ ok: false });
+    }
 });
 
 // VALIDATE TOKEN
