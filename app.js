@@ -9,6 +9,7 @@ document.addEventListener("mousemove", e => {
 let currentUser  = null;
 let allGames     = [];
 let execPlaceId  = null;
+let execGameName = "";
 let ownerUsers   = [];
 let gamesTimer   = null;
 let trackingTimer = null;
@@ -263,6 +264,7 @@ async function joinGame(placeId, name) {
 // ─── SCRIPT EXECUTION ─────────────────────────────────────────────────────────
 function openExec(placeId, name) {
     execPlaceId = placeId;
+    execGameName = name;
     document.getElementById("execModalTitle").textContent = `💻 Execute — ${name}`;
     document.getElementById("execOutput").innerHTML = "";
     document.getElementById("execCode").value = "";
@@ -275,6 +277,7 @@ function openExec(placeId, name) {
 function closeExecModal() {
     document.getElementById("execModal").classList.add("hidden");
     execPlaceId = null;
+    execGameName = "";
 }
 
 function appendExecLog(text, type = "output") {
@@ -284,6 +287,55 @@ function appendExecLog(text, type = "output") {
     line.textContent = text;
     el.appendChild(line);
     el.scrollTop = el.scrollHeight;
+}
+
+function popoutExec() {
+    if (!execPlaceId) return;
+    const currentCode = document.getElementById("execCode").value;
+    const title = `Execute - ${execGameName || execPlaceId}`;
+    const popup = window.open("", "vantixExecutor", "popup=yes,width=860,height=640");
+    if (!popup) {
+        appendExecLog("Pop-out blocked. Allow pop-ups for this site and try again.", "warn");
+        return;
+    }
+
+    popup.document.open();
+    popup.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title.replace(/[<>&"]/g, "")}</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030a06;color:#e8f5ee;font-family:'Space Grotesk',Arial,sans-serif;height:100vh;display:flex;flex-direction:column}header{padding:14px 18px;border-bottom:1px solid rgba(0,255,136,.18);color:#00ff88;font:700 14px 'Space Mono',monospace;background:rgba(0,255,136,.04)}#out{flex:1;overflow:auto;padding:14px 18px;font:13px/1.7 'Space Mono',Consolas,monospace}.line-info{color:rgba(0,255,136,.55)}.line-input{color:#7fffb8}.line-output{color:#a0ffcc}.line-error{color:#ff7070}.line-warn{color:#ffd470}.input{border-top:1px solid rgba(0,255,136,.18);padding:12px 14px;background:rgba(0,0,0,.24)}textarea{width:100%;min-height:130px;resize:vertical;background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.18);border-radius:10px;color:#e8f5ee;padding:10px 12px;font:13px/1.6 'Space Mono',Consolas,monospace;outline:none}textarea:focus{border-color:#00cc6a}footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;color:rgba(232,245,238,.5);font-size:12px}button{background:#00ff88;color:#000;border:0;border-radius:10px;padding:10px 24px;font-weight:800;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
+</style>
+</head>
+<body>
+<header>💻 ${title.replace(/[<>&"]/g, "")}</header>
+<div id="out"></div>
+<div class="input">
+<textarea id="code" spellcheck="false" placeholder="-- Enter Lua code&#10;print('Hello from server!')"></textarea>
+<footer><span>Ctrl+Enter to run</span><button id="run">▶ Run</button></footer>
+</div>
+<script>
+const placeId=${JSON.stringify(execPlaceId)};
+const initialCode=${JSON.stringify(currentCode)};
+const out=document.getElementById("out");
+const code=document.getElementById("code");
+const run=document.getElementById("run");
+code.value=initialCode;
+function log(text,type="output"){const line=document.createElement("div");line.className="line-"+type;line.textContent=text;out.appendChild(line);out.scrollTop=out.scrollHeight;}
+async function poll(id,attempts=0){if(attempts>120){log("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.","warn");return;}await new Promise(r=>setTimeout(r,500));try{const res=await fetch("/api/result?placeId="+encodeURIComponent(placeId)+"&id="+encodeURIComponent(id));const data=await res.json();if(data.status==="done"){log("✅ "+data.output,"output");}else{if(attempts>0&&attempts%20===0)log("Still waiting for Roblox to post the result...","info");poll(id,attempts+1);}}catch{poll(id,attempts+1);}}
+async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("❌ "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("❌ "+e.message,"error");}run.disabled=false;run.textContent="▶ Run";}
+run.addEventListener("click",execute);
+document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")execute();});
+log("// Connected to: ${String(execGameName || "Game").replace(/[\\`$]/g, "")} ("+placeId+")","info");
+log("// Pop-out executor ready.","info");
+</script>
+</body>
+</html>`);
+    popup.document.close();
+    popup.focus();
 }
 
 async function runExec() {
