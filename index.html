@@ -198,7 +198,10 @@
     <div class="modal">
         <div class="modal-header">
             <span id="execModalTitle">Script Execution</span>
-            <button onclick="closeExecModal()" class="modal-close">✕</button>
+            <div class="modal-header-actions">
+                <button onclick="popoutExec()" class="modal-popout" title="Pop out executor">↗</button>
+                <button onclick="closeExecModal()" class="modal-close">✕</button>
+            </div>
         </div>
         <div id="execOutput"></div>
         <div class="modal-input-area">
