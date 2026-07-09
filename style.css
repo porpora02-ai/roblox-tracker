@@ -477,11 +477,18 @@ body {
     color: var(--green);
     font-family: 'Space Mono', monospace;
 }
+.modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.modal-popout,
 .modal-close {
     background: none; border: none; color: var(--muted);
     font-size: 18px; cursor: pointer; padding: 2px 6px;
     border-radius: 6px; transition: .15s;
 }
+.modal-popout:hover,
 .modal-close:hover { color: var(--text); background: rgba(255,255,255,0.07); }
 #execOutput {
     flex: 1; overflow-y: auto;
