@@ -367,7 +367,10 @@ app.get("/api/poll", async (req, res) => {
     try {
         const { placeId, jobId } = req.query;
         if (!placeId) return res.json({ commands: [] });
-        const query = { placeId, status: "pending", $or: [{ jobId: String(jobId || "") }, { jobId: { $exists: false } }, { jobId: "" }] };
+        const query = { placeId, status: "pending" };
+        if (jobId) {
+            query.$or = [{ jobId: String(jobId) }, { jobId: { $exists: false } }, { jobId: "" }];
+        }
         const cmds = await Command.find(query);
         await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
         res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
@@ -410,6 +413,3 @@ app.post("/api/owner/set-tier", requireOwner, async (req, res) => {
         res.json({ ok: true });
     } catch { res.json({ ok: false }); }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Vantix running on port", PORT));
