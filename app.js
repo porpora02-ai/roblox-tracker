@@ -286,27 +286,6 @@ function appendExecLog(text, type = "output") {
     el.scrollTop = el.scrollHeight;
 }
 
-function getRequireSuggestion(code) {
-    const unsupported = code.split(/\r?\n/).map(line => line.trim()).find(line =>
-        line.startsWith("require(") &&
-        !/^require\s*\(\s*\d+\s*\)\s*$/.test(line) &&
-        !/^require\s*\(\s*\d+\s*\)\s*\([^()]*\)\s*$/.test(line) &&
-        !/^require\s*\(\s*\d+\s*\)\s*:\s*[\w_]+\s*\([^()]*\)\s*$/.test(line) &&
-        !/^require\s*\(\s*\d+\s*\)\s*\.\s*[\w_]+\s*\([^()]*\)\s*$/.test(line) &&
-        !/^require\s*\(\s*\d+\s*\)\s*\.\s*[\w_]+\s*:\s*[\w_]+\s*\([^()]*\)\s*$/.test(line) &&
-        !/^require\s*\(\s*\d+\s*\)\s*\.\s*[\w_]+\s*\([^()]*\)\s*$/.test(line)
-    );
-    if (!unsupported) return null;
-
-    const id = unsupported.match(/require\s*\(\s*(\d+)\s*\)/)?.[1] || "MODULE_ID";
-    const arg = unsupported.match(/["']([^"']+)["']/)?.[1] || "usernamehere";
-
-    return {
-        unsupported,
-        suggested: `require(${id})("${arg}")`
-    };
-}
-
 async function runExec() {
     const code = document.getElementById("execCode").value.trim();
     if (!code || !execPlaceId) return;
@@ -315,17 +294,6 @@ async function runExec() {
     btn.disabled = true;
     btn.textContent = "Sending...";
     appendExecLog("> " + code, "input");
-
-    const requireSuggestion = getRequireSuggestion(code);
-    if (requireSuggestion) {
-        appendExecLog("We do not support that require format without LoadStringEnabled yet.", "warn");
-        appendExecLog("Try this in the executor instead:", "info");
-        appendExecLog(requireSuggestion.suggested, "input");
-        document.getElementById("execCode").value = requireSuggestion.suggested;
-        btn.disabled = false;
-        btn.textContent = "▶ Run";
-        return;
-    }
 
     const res  = await fetch("/api/execute", {
         method: "POST",
@@ -419,3 +387,35 @@ function renderOwnerUsers(list) {
 }
 
 async function setTier(username) {
+    const tier = document.getElementById("tier-sel-" + username).value;
+    const res  = await fetch("/api/owner/set-tier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, tier })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        const u = ownerUsers.find(u => u.username === username);
+        if (u) u.tier = tier;
+        renderOwnerUsers(ownerUsers);
+    } else {
+        alert(data.error || "Failed to set tier");
+    }
+}
+
+// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
+document.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.key === "Enter") {
+        if (!document.getElementById("execModal").classList.contains("hidden")) {
+            runExec();
+        }
+    }
+    if (e.key === "Escape") closeExecModal();
+});
+
+document.getElementById("execModal").addEventListener("click", e => {
+    if (e.target === document.getElementById("execModal")) closeExecModal();
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+checkSession();
