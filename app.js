@@ -17,7 +17,8 @@ let trackingTimer = null;
 // ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
 function showPage(id) {
     document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
-    document.getElementById(id).classList.remove("hidden");
+    const page = document.getElementById(id);
+    if (page) page.classList.remove("hidden");
 }
 
 function switchTab(tab) {
@@ -100,8 +101,6 @@ async function checkSession() {
     if (data.ok) {
         currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
         enterApp();
-    } else {
-        showPage("landingPage");
     }
 }
 
@@ -268,6 +267,21 @@ function toggleGamesRefresh(enabled) {
     if (gamesTimer) clearInterval(gamesTimer);
     gamesTimer = enabled ? setInterval(loadGames, 5000) : null;
 }
+
+window.showPage = showPage;
+window.switchTab = switchTab;
+window.doSignup = doSignup;
+window.doLogin = doLogin;
+window.doLogout = doLogout;
+window.saveTracking = saveTracking;
+window.renderGames = renderGames;
+window.joinGame = joinGame;
+window.openExec = openExec;
+window.closeExecModal = closeExecModal;
+window.popoutExec = popoutExec;
+window.runExec = runExec;
+window.toggleCursorGlow = toggleCursorGlow;
+window.toggleGamesRefresh = toggleGamesRefresh;
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
 async function joinGame(placeId, name) {
@@ -471,3 +485,36 @@ function renderOwnerUsers(list) {
 async function setTier(username) {
     const tier = document.getElementById("tier-sel-" + username).value;
     const res  = await fetch("/api/owner/set-tier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, tier })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        const u = ownerUsers.find(u => u.username === username);
+        if (u) u.tier = tier;
+        renderOwnerUsers(ownerUsers);
+    } else {
+        alert(data.error || "Failed to set tier");
+    }
+}
+
+// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
+document.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.key === "Enter") {
+        if (!document.getElementById("execModal").classList.contains("hidden")) {
+            runExec();
+        }
+    }
+    if (e.key === "Escape") closeExecModal();
+});
+
+document.getElementById("execModal").addEventListener("click", e => {
+    if (e.target === document.getElementById("execModal")) closeExecModal();
+});
+
+document.addEventListener("click", e => {
+    const pageTarget = e.target.closest("[data-page]");
+    if (!pageTarget) return;
+    e.preventDefault();
+    showPage(pageTarget.dataset.page);
