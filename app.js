@@ -518,3 +518,7 @@ document.addEventListener("click", e => {
     if (!pageTarget) return;
     e.preventDefault();
     showPage(pageTarget.dataset.page);
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+checkSession();
