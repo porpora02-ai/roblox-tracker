@@ -73,7 +73,7 @@
 <div id="appPage" class="page hidden">
     <aside class="sidebar">
         <div class="sidebar-brand">
-            <img src="logo.png" alt="Vantix">
+            <img src="./logo.png" alt="Vantix" onerror="this.classList.add('logo-missing')">
             <div>
                 <strong>VANTIX</strong>
                 <span>SS</span>
@@ -106,6 +106,20 @@
                 <div class="overview-card"><span id="overviewGames">0</span><p>Visible Games</p></div>
                 <div class="overview-card"><span id="overviewTracking">Offline</span><p>Tracked Player</p></div>
             </div>
+            <div class="overview-wide">
+                <div class="command-panel">
+                    <div>
+                        <h3>Command Center</h3>
+                        <p>Open any tracked game card, launch the executor, and send commands to the connected server.</p>
+                    </div>
+                    <button class="btn-primary" onclick="switchTab('games')">Open Games</button>
+                </div>
+                <div class="status-list">
+                    <div><span></span><strong>API</strong><p>Online</p></div>
+                    <div><span></span><strong>Executor</strong><p>Ready</p></div>
+                    <div><span></span><strong>Refresh</strong><p>Every 5 seconds</p></div>
+                </div>
+            </div>
             <div class="quick-panel">
                 <h3>Quick Links</h3>
                 <div class="quick-actions">
@@ -113,6 +127,12 @@
                     <button class="btn-ghost" onclick="switchTab('profile')">My Profile</button>
                     <button class="btn-ghost" onclick="switchTab('settings')">Settings</button>
                 </div>
+            </div>
+            <div class="activity-panel">
+                <h3>Session Notes</h3>
+                <div class="activity-line"><span></span>Use Tracking to bind your Roblox username.</div>
+                <div class="activity-line"><span></span>Games refresh automatically while you are signed in.</div>
+                <div class="activity-line"><span></span>The executor can pop out into a separate browser window.</div>
             </div>
         </div>
 
@@ -183,7 +203,7 @@
                 <p class="tab-sub">Your Vantix account details.</p>
             </div>
             <div class="profile-panel">
-                <img src="logo.png" alt="Vantix">
+                <img src="./logo.png" alt="Vantix" onerror="this.classList.add('logo-missing')">
                 <div>
                     <h3 id="profileUsername">User</h3>
                     <p id="profileTier">No Tier</p>
