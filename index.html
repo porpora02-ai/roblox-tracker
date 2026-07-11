@@ -16,8 +16,8 @@
     <nav class="land-nav">
         <div class="logo">VANTIX</div>
         <div class="land-nav-btns">
-            <button onclick="showPage('loginPage')" class="btn-ghost">Log In</button>
-            <button onclick="showPage('signupPage')" class="btn-primary">Get Started</button>
+            <button type="button" data-page="loginPage" onclick="showPage('loginPage')" class="btn-ghost">Log In</button>
+            <button type="button" data-page="signupPage" onclick="showPage('signupPage')" class="btn-primary">Get Started</button>
         </div>
     </nav>
 
@@ -26,8 +26,8 @@
         <h1 class="hero-title">Track Every<br><span class="green-text">Active Server</span></h1>
         <p class="hero-sub">Real-time Roblox game tracking with tier-based access. Find low-population servers and get the edge you need.</p>
         <div class="hero-btns">
-            <button onclick="showPage('signupPage')" class="btn-primary btn-lg">Create Account</button>
-            <button onclick="showPage('loginPage')" class="btn-ghost btn-lg">Log In</button>
+            <button type="button" data-page="signupPage" onclick="showPage('signupPage')" class="btn-primary btn-lg">Create Account</button>
+            <button type="button" data-page="loginPage" onclick="showPage('loginPage')" class="btn-ghost btn-lg">Log In</button>
         </div>
         <div class="tier-preview">
             <div class="tier-card-sm">Bronze<span>10 players</span></div>
@@ -51,8 +51,8 @@
         <label style="font-size:13px;color:var(--muted);margin-bottom:-8px;">Date of Birth</label>
         <input id="su-dob" type="date" class="inp" style="color-scheme:dark;">
         <button onclick="doSignup()" class="btn-primary full">Create Account</button>
-        <p class="auth-switch">Already have an account? <a onclick="showPage('loginPage')">Log in</a></p>
-        <p class="auth-switch"><a onclick="showPage('landingPage')">Back to home</a></p>
+        <p class="auth-switch">Already have an account? <a data-page="loginPage" onclick="showPage('loginPage')">Log in</a></p>
+        <p class="auth-switch"><a data-page="landingPage" onclick="showPage('landingPage')">Back to home</a></p>
     </div>
 </div>
 
@@ -65,8 +65,8 @@
         <input id="li-username" type="text" placeholder="Username" class="inp">
         <input id="li-password" type="password" placeholder="Password" class="inp">
         <button onclick="doLogin()" class="btn-primary full">Log In</button>
-        <p class="auth-switch">No account? <a onclick="showPage('signupPage')">Sign up</a></p>
-        <p class="auth-switch"><a onclick="showPage('landingPage')">Back to home</a></p>
+        <p class="auth-switch">No account? <a data-page="signupPage" onclick="showPage('signupPage')">Sign up</a></p>
+        <p class="auth-switch"><a data-page="landingPage" onclick="showPage('landingPage')">Back to home</a></p>
     </div>
 </div>
 
