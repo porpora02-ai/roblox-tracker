@@ -21,7 +21,7 @@ function showPage(id) {
 }
 
 function switchTab(tab) {
-    if (tab === "owner" && !isOwnerAccount()) return switchTab("games");
+    if (tab === "owner" && !isOwnerAccount()) return switchTab("overview");
     document.querySelectorAll(".tab-content").forEach(t => t.classList.add("hidden"));
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     document.getElementById("tab-" + tab).classList.remove("hidden");
@@ -108,20 +108,23 @@ async function checkSession() {
 // ─── APP ENTRY ────────────────────────────────────────────────────────────────
 const TIER_LABELS = {
     none:         "No Tier",
-    bronze:       "🥉 Bronze",
-    silver:       "🥈 Silver",
-    gold:         "🥇 Gold",
-    diamond:      "💠 Diamond",
-    platinum:     "👑 Platinum",
-    early_access: "🚀 Early Access",
-    elite:        "🔥 Elite",
-    absolute:     "🌌 Absolute"
+    bronze:       "Bronze",
+    silver:       "Silver",
+    gold:         "Gold",
+    diamond:      "Diamond",
+    platinum:     "Platinum",
+    early_access: "Early Access",
+    elite:        "Elite",
+    absolute:     "Absolute"
 };
 
 function enterApp() {
     showPage("appPage");
     document.getElementById("userLabel").textContent = currentUser.username;
     document.getElementById("tierBadge").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
+    document.getElementById("profileUsername").textContent = currentUser.username;
+    document.getElementById("profileTier").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
+    document.getElementById("overviewTier").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
 
     document.getElementById("ownerTabBtn").classList.add("hidden");
     if (isOwnerAccount()) {
@@ -130,6 +133,7 @@ function enterApp() {
 
     loadGames();
     loadTracking();
+    switchTab("overview");
     if (gamesTimer) clearInterval(gamesTimer);
     gamesTimer = setInterval(loadGames, 5000);
     if (trackingTimer) clearInterval(trackingTimer);
@@ -142,6 +146,8 @@ async function loadGames() {
     const res  = await fetch("/api/games");
     if (!res.ok) return;
     allGames = await res.json();
+    const overviewGames = document.getElementById("overviewGames");
+    if (overviewGames) overviewGames.textContent = allGames.length;
     renderGames();
 }
 
@@ -163,13 +169,13 @@ function renderGames() {
             <div class="game-info">
                 <h3>${g.name}</h3>
                 <div class="game-meta">
-                    <span>👥 Players: <b>${g.players}</b></span>
-                    <span>🆔 <b>${g.placeId}</b></span>
-                    <span>👤 <b>${g.creator}</b></span>
-                    ${g.earlyAccess ? '<span>🚀 <b>Early Access</b></span>' : ""}
+                    <span>Players: <b>${g.players}</b></span>
+                    <span>Place ID: <b>${g.placeId}</b></span>
+                    <span>Creator: <b>${g.creator}</b></span>
+                    ${g.earlyAccess ? '<span><b>Early Access</b></span>' : ""}
                 </div>
                 <div class="game-actions">
-                    <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">▶ Join Game</button>
+                    <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">Join Game</button>
                     <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">Execute</button>
                 </div>
             </div>
@@ -190,6 +196,7 @@ async function loadTracking() {
             input.value = data.robloxUsername || "";
             currentUser.robloxUsername = data.robloxUsername || "";
             renderTrackingStatus(data);
+            updateOverviewTracking(data);
         }
     } catch {
         status.textContent = "Could not load tracking settings.";
@@ -213,6 +220,7 @@ async function saveTracking() {
         input.value = data.robloxUsername || "";
         currentUser.robloxUsername = data.robloxUsername || "";
         renderTrackingStatus(data);
+        updateOverviewTracking(data);
     } else {
         status.textContent = data.error || "Could not save tracking settings.";
         status.classList.add("error");
@@ -237,6 +245,28 @@ function renderTrackingStatus(data) {
         ? `Offline. Last seen ${new Date(data.lastSeen).toLocaleString()}.`
         : `Watching for ${data.robloxUsername}. Offline right now.`;
     status.classList.add("offline");
+}
+
+function updateOverviewTracking(data) {
+    const el = document.getElementById("overviewTracking");
+    if (!el) return;
+    if (!data?.robloxUsername) {
+        el.textContent = "Not Set";
+    } else if (data.online) {
+        el.textContent = "Online";
+    } else {
+        el.textContent = "Offline";
+    }
+}
+
+function toggleCursorGlow(enabled) {
+    const glowEl = document.getElementById("cursorGlow");
+    if (glowEl) glowEl.style.display = enabled ? "block" : "none";
+}
+
+function toggleGamesRefresh(enabled) {
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = enabled ? setInterval(loadGames, 5000) : null;
 }
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
@@ -265,7 +295,7 @@ async function joinGame(placeId, name) {
 function openExec(placeId, name) {
     execPlaceId = placeId;
     execGameName = name;
-    document.getElementById("execModalTitle").textContent = `💻 Execute — ${name}`;
+    document.getElementById("execModalTitle").textContent = `Execute - ${name}`;
     document.getElementById("execOutput").innerHTML = "";
     document.getElementById("execCode").value = "";
     appendExecLog(`// Connected to: ${name} (${placeId})`, "info");
@@ -311,11 +341,11 @@ function popoutExec() {
 </style>
 </head>
 <body>
-<header>💻 ${title.replace(/[<>&"]/g, "")}</header>
+<header>${title.replace(/[<>&"]/g, "")}</header>
 <div id="out"></div>
 <div class="input">
 <textarea id="code" spellcheck="false" placeholder="-- Enter Lua code&#10;print('Hello from server!')"></textarea>
-<footer><span>Ctrl+Enter to run</span><button id="run">▶ Run</button></footer>
+<footer><span>Ctrl+Enter to run</span><button id="run">Run</button></footer>
 </div>
 <script>
 const placeId=${JSON.stringify(execPlaceId)};
@@ -325,8 +355,8 @@ const code=document.getElementById("code");
 const run=document.getElementById("run");
 code.value=initialCode;
 function log(text,type="output"){const line=document.createElement("div");line.className="line-"+type;line.textContent=text;out.appendChild(line);out.scrollTop=out.scrollHeight;}
-async function poll(id,attempts=0){if(attempts>120){log("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.","warn");return;}await new Promise(r=>setTimeout(r,500));try{const res=await fetch("/api/result?placeId="+encodeURIComponent(placeId)+"&id="+encodeURIComponent(id));const data=await res.json();if(data.status==="done"){log("✅ "+data.output,"output");}else{if(attempts>0&&attempts%20===0)log("Still waiting for Roblox to post the result...","info");poll(id,attempts+1);}}catch{poll(id,attempts+1);}}
-async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("❌ "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("❌ "+e.message,"error");}run.disabled=false;run.textContent="▶ Run";}
+async function poll(id,attempts=0){if(attempts>120){log("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.","warn");return;}await new Promise(r=>setTimeout(r,500));try{const res=await fetch("/api/result?placeId="+encodeURIComponent(placeId)+"&id="+encodeURIComponent(id));const data=await res.json();if(data.status==="done"){log("Done: "+data.output,"output");}else{if(attempts>0&&attempts%20===0)log("Still waiting for Roblox to post the result...","info");poll(id,attempts+1);}}catch{poll(id,attempts+1);}}
+async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("Error: "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("Error: "+e.message,"error");}run.disabled=false;run.textContent="Run";}
 run.addEventListener("click",execute);
 document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")execute();});
 log("// Connected to: ${String(execGameName || "Game").replace(/[\\`$]/g, "")} ("+placeId+")","info");
@@ -355,23 +385,23 @@ async function runExec() {
     const data = await res.json();
 
     if (!data.ok) {
-        appendExecLog("❌ " + (data.error || "Failed to send"), "error");
+        appendExecLog("Error: " + (data.error || "Failed to send"), "error");
         btn.disabled = false;
-        btn.textContent = "▶ Run";
+        btn.textContent = "Run";
         return;
     }
 
-    appendExecLog("⏳ Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.", "info");
+    appendExecLog("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.", "info");
     pollExecResult(data.id);
 
     btn.disabled = false;
-    btn.textContent = "▶ Run";
+    btn.textContent = "Run";
     document.getElementById("execCode").value = "";
 }
 
 async function pollExecResult(cmdId, attempts = 0) {
     if (attempts > 120) {
-        appendExecLog("⚠️ No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.", "warn");
+        appendExecLog("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.", "warn");
         return;
     }
     await new Promise(r => setTimeout(r, 500));
@@ -379,10 +409,10 @@ async function pollExecResult(cmdId, attempts = 0) {
         const res  = await fetch(`/api/result?placeId=${execPlaceId}&id=${cmdId}`);
         const data = await res.json();
         if (data.status === "done") {
-            appendExecLog("✅ " + data.output, "output");
+            appendExecLog("Done: " + data.output, "output");
         } else {
             if (attempts > 0 && attempts % 20 === 0) {
-                appendExecLog("⏳ Still waiting for Roblox to post the result...", "info");
+                appendExecLog("Still waiting for Roblox to post the result...", "info");
             }
             pollExecResult(cmdId, attempts + 1);
         }
@@ -441,33 +471,3 @@ function renderOwnerUsers(list) {
 async function setTier(username) {
     const tier = document.getElementById("tier-sel-" + username).value;
     const res  = await fetch("/api/owner/set-tier", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, tier })
-    });
-    const data = await res.json();
-    if (data.ok) {
-        const u = ownerUsers.find(u => u.username === username);
-        if (u) u.tier = tier;
-        renderOwnerUsers(ownerUsers);
-    } else {
-        alert(data.error || "Failed to set tier");
-    }
-}
-
-// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
-document.addEventListener("keydown", e => {
-    if (e.ctrlKey && e.key === "Enter") {
-        if (!document.getElementById("execModal").classList.contains("hidden")) {
-            runExec();
-        }
-    }
-    if (e.key === "Escape") closeExecModal();
-});
-
-document.getElementById("execModal").addEventListener("click", e => {
-    if (e.target === document.getElementById("execModal")) closeExecModal();
-});
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-checkSession();
