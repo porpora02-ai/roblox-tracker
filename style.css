@@ -4,6 +4,7 @@
     --green:     #00ff88;
     --green-dim: #00cc6a;
     --green-glow:#00ff8833;
+    --green-soft:#0b2d1b;
     --bg:        #030a06;
     --bg2:       #080f0a;
     --card:      rgba(0,255,136,0.04);
@@ -16,7 +17,10 @@
 
 body {
     font-family: 'Space Grotesk', sans-serif;
-    background: var(--bg);
+    background:
+        radial-gradient(circle at 18% 8%, rgba(0,255,136,0.08), transparent 28%),
+        radial-gradient(circle at 82% 78%, rgba(0,255,136,0.06), transparent 24%),
+        var(--bg);
     color: var(--text);
     min-height: 100vh;
     overflow-x: hidden;
@@ -220,23 +224,43 @@ body {
     top: 0;
     display: flex;
     flex-direction: column;
-    padding: 22px 14px;
-    background: rgba(4,16,9,0.96);
+    padding: 24px 16px;
+    background:
+        linear-gradient(180deg, rgba(0,255,136,0.045), transparent 34%),
+        rgba(4,16,9,0.98);
     border-right: 1px solid var(--border);
+    box-shadow: 18px 0 60px rgba(0,0,0,0.28);
     z-index: 20;
 }
 .sidebar-brand {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 4px 12px 24px;
+    padding: 4px 12px 28px;
 }
 .sidebar-brand img {
-    width: 54px;
-    height: 54px;
+    width: 68px;
+    height: 68px;
     object-fit: cover;
-    border-radius: 8px;
+    border-radius: 10px;
     border: 1px solid var(--border-h);
+    box-shadow: 0 0 22px rgba(0,255,136,0.2);
+}
+.sidebar-brand img.logo-missing,
+.profile-panel img.logo-missing {
+    display: none;
+}
+.sidebar-brand:has(img.logo-missing)::before {
+    content: "V";
+    width: 68px;
+    height: 68px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    border: 1px solid var(--border-h);
+    color: var(--green);
+    background: rgba(0,255,136,0.08);
+    font: 800 30px 'Space Mono', monospace;
     box-shadow: 0 0 22px rgba(0,255,136,0.2);
 }
 .sidebar-brand strong {
@@ -267,7 +291,7 @@ body {
     text-transform: uppercase;
     font-weight: 700;
     color: rgba(232,245,238,0.55);
-    padding: 13px 16px;
+    padding: 14px 16px;
     border-radius: 8px;
     text-align: left;
 }
@@ -282,7 +306,7 @@ body {
     font-family: 'Space Mono', monospace;
 }
 .side-tabs .tab.active {
-    background: rgba(0,255,136,0.12);
+    background: linear-gradient(90deg, rgba(0,255,136,0.18), rgba(0,255,136,0.045));
     border-color: rgba(0,255,136,0.38);
     color: var(--green);
     box-shadow: inset 3px 0 0 var(--green);
@@ -333,7 +357,13 @@ body {
 /* ── TAB CONTENT ── */
 .tab-content { padding: 32px; }
 .tab-header { margin-bottom: 28px; }
-.tab-header h2 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+.tab-header h2 {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: var(--text);
+    text-shadow: 0 0 26px rgba(0,255,136,0.12);
+}
 .tab-sub { color: var(--muted); font-size: 14px; }
 .search-inp {
     background: rgba(0,255,136,0.04);
@@ -357,14 +387,16 @@ body {
     gap: 20px;
 }
 .game-card {
-    background: var(--card);
+    background:
+        linear-gradient(180deg, rgba(0,255,136,0.055), rgba(0,255,136,0.018)),
+        rgba(0,12,6,0.74);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     overflow: hidden;
     transition: .25s;
 }
 .game-card:hover { border-color: var(--border-h); transform: translateY(-3px); box-shadow: 0 0 30px rgba(0,255,136,0.08); }
-.game-card img { width: 100%; height: 160px; object-fit: cover; }
+.game-card img { width: 100%; height: 170px; object-fit: cover; }
 .game-info { padding: 16px; }
 .game-info h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
 .game-meta { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
@@ -408,9 +440,11 @@ body {
 /* TRACKING */
 .tracking-panel {
     max-width: 560px;
-    background: var(--card);
+    background:
+        linear-gradient(180deg, rgba(0,255,136,0.055), rgba(0,255,136,0.018)),
+        rgba(0,12,6,0.74);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 22px;
 }
 .tracking-panel label {
@@ -444,9 +478,11 @@ body {
     margin-bottom: 32px;
 }
 .tier-card {
-    background: var(--card);
+    background:
+        linear-gradient(180deg, rgba(0,255,136,0.055), rgba(0,255,136,0.018)),
+        rgba(0,12,6,0.74);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     padding: 24px 20px;
     transition: .2s;
     position: relative;
@@ -571,22 +607,97 @@ body {
 }
 .overview-card,
 .quick-panel,
+.activity-panel,
+.command-panel,
+.status-list,
 .settings-panel,
 .profile-panel {
-    background: var(--card);
+    background:
+        linear-gradient(180deg, rgba(0,255,136,0.055), rgba(0,255,136,0.018)),
+        rgba(0,12,6,0.74);
     border: 1px solid var(--border);
     border-radius: 8px;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.18);
 }
 .overview-card {
-    padding: 22px 18px;
+    padding: 26px 20px;
+    position: relative;
+    overflow: hidden;
+}
+.overview-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -20px -30px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(0,255,136,0.06);
 }
 .overview-card span {
     display: block;
     color: var(--green);
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 800;
     font-family: 'Space Mono', monospace;
     margin-bottom: 6px;
+}
+.overview-wide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.command-panel {
+    min-height: 142px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+.command-panel h3,
+.activity-panel h3 {
+    color: var(--green);
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+}
+.command-panel p {
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.6;
+}
+.status-list {
+    padding: 12px;
+    display: grid;
+    gap: 8px;
+}
+.status-list div {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(0,255,136,0.035);
+    border: 1px solid rgba(0,255,136,0.06);
+}
+.status-list span,
+.activity-line span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 14px var(--green);
+}
+.status-list strong {
+    color: var(--text);
+}
+.status-list p {
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
 }
 .overview-card p,
 .quick-panel h3,
@@ -598,12 +709,27 @@ body {
 }
 .quick-panel {
     padding: 24px 22px;
+    margin-bottom: 18px;
 }
 .quick-actions {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
     margin-top: 16px;
+}
+.activity-panel {
+    padding: 22px;
+}
+.activity-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    padding: 12px 0;
+    border-top: 1px solid rgba(0,255,136,0.06);
+}
+.activity-line:first-of-type {
+    margin-top: 6px;
 }
 .settings-grid {
     display: grid;
@@ -743,6 +869,13 @@ body {
     }
     .overview-grid {
         grid-template-columns: 1fr;
+    }
+    .overview-wide {
+        grid-template-columns: 1fr;
+    }
+    .command-panel {
+        align-items: stretch;
+        flex-direction: column;
     }
     .tracking-row,
     .profile-panel {
