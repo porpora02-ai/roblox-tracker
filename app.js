@@ -13,6 +13,56 @@ let execGameName = "";
 let ownerUsers   = [];
 let gamesTimer   = null;
 let trackingTimer = null;
+let csrfToken = "";
+
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+    }[ch]));
+}
+
+function jsString(value) {
+    return String(value ?? "")
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, "")
+        .replace(/\n/g, "\\n");
+}
+
+function userDomId(username) {
+    return "tier-sel-" + encodeURIComponent(String(username ?? "")).replace(/%/g, "_");
+}
+
+async function getCsrfToken() {
+    if (csrfToken) return csrfToken;
+    const res = await fetch("/api/csrf");
+    const data = await res.json();
+    csrfToken = data.token || "";
+    return csrfToken;
+}
+
+async function postJson(url, body) {
+    const token = await getCsrfToken();
+    let res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-csrf-token": token },
+        body: JSON.stringify(body || {})
+    });
+    if (res.status === 403) {
+        csrfToken = "";
+        const retryToken = await getCsrfToken();
+        res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-csrf-token": retryToken },
+            body: JSON.stringify(body || {})
+        });
+    }
+    return res;
+}
 
 // ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -45,11 +95,7 @@ async function doSignup() {
     const dob      = document.getElementById("su-dob").value;
     const errEl    = document.getElementById("signupError");
 
-    const res = await fetch("/api/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, username, password, dob })
-    });
+    const res = await postJson("/api/signup", { email, username, password, dob });
     const data = await res.json();
     if (data.ok) {
         alert("Account created successfully. Please log in.");
@@ -68,11 +114,7 @@ async function doLogin() {
     const password = document.getElementById("li-password").value;
     const errEl    = document.getElementById("loginError");
 
-    const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-    });
+    const res = await postJson("/api/login", { username, password });
     const data = await res.json();
     if (data.ok) {
         currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
@@ -84,7 +126,7 @@ async function doLogin() {
 }
 
 async function doLogout() {
-    await fetch("/api/logout", { method: "POST" });
+    await postJson("/api/logout", {});
     currentUser = null;
     allGames = [];
     if (gamesTimer) clearInterval(gamesTimer);
@@ -154,7 +196,7 @@ function renderGames() {
     const search = (document.getElementById("gameSearch")?.value || "").toLowerCase();
     const grid   = document.getElementById("gamesGrid");
     const filtered = allGames.filter(g =>
-        !search || g.name.toLowerCase().includes(search)
+        !search || String(g.name || "").toLowerCase().includes(search)
     );
 
     if (filtered.length === 0) {
@@ -162,24 +204,32 @@ function renderGames() {
         return;
     }
 
-    grid.innerHTML = filtered.map(g => `
+    grid.innerHTML = filtered.map(g => {
+        const name = escapeHtml(g.name || "Unknown");
+        const rawName = g.name || "Unknown";
+        const placeId = escapeHtml(g.placeId || "");
+        const icon = escapeHtml(g.icon || "https://placehold.co/400x160/030a06/00ff88?text=Vantix");
+        const creator = escapeHtml(g.creator || "Unknown");
+        const players = Number(g.players) || 0;
+        return `
         <div class="game-card">
-            <img src="${g.icon || "https://placehold.co/400x160/030a06/00ff88?text=Vantix"}" alt="${g.name}">
+            <img src="${icon}" alt="${name}">
             <div class="game-info">
-                <h3>${g.name}</h3>
+                <h3>${name}</h3>
                 <div class="game-meta">
-                    <span>Players: <b>${g.players}</b></span>
-                    <span>Place ID: <b>${g.placeId}</b></span>
-                    <span>Creator: <b>${g.creator}</b></span>
+                    <span>Players: <b>${players}</b></span>
+                    <span>Place ID: <b>${placeId}</b></span>
+                    <span>Creator: <b>${creator}</b></span>
                     ${g.earlyAccess ? '<span><b>Early Access</b></span>' : ""}
                 </div>
                 <div class="game-actions">
-                    <button class="btn-join" onclick="joinGame('${g.placeId}', '${g.name}')">Join Game</button>
-                    <button class="btn-exec" onclick="openExec('${g.placeId}', '${g.name}')">Execute</button>
+                    <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">Join Game</button>
+                    <button class="btn-exec" onclick="openExec('${jsString(g.placeId)}', '${jsString(rawName)}')">Execute</button>
                 </div>
             </div>
         </div>
-    `).join("");
+    `;
+    }).join("");
 }
 
 // USER TRACKING
@@ -209,11 +259,7 @@ async function saveTracking() {
     const robloxUsername = input.value.trim().replace(/^@/, "");
     status.textContent = "Saving...";
     status.classList.remove("error");
-    const res = await fetch("/api/tracking", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ robloxUsername })
-    });
+    const res = await postJson("/api/tracking", { robloxUsername });
     const data = await res.json();
     if (data.ok) {
         input.value = data.robloxUsername || "";
@@ -285,11 +331,7 @@ window.toggleGamesRefresh = toggleGamesRefresh;
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
 async function joinGame(placeId, name) {
-    const res  = await fetch("/api/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeId })
-    });
+    const res  = await postJson("/api/join", { placeId });
     const data = await res.json();
     if (!data.ok) {
         alert(data.error || "Could not join game.");
@@ -368,9 +410,11 @@ const out=document.getElementById("out");
 const code=document.getElementById("code");
 const run=document.getElementById("run");
 code.value=initialCode;
+let popupCsrf="";
 function log(text,type="output"){const line=document.createElement("div");line.className="line-"+type;line.textContent=text;out.appendChild(line);out.scrollTop=out.scrollHeight;}
+async function csrf(){if(popupCsrf)return popupCsrf;const r=await fetch("/api/csrf");const d=await r.json();popupCsrf=d.token||"";return popupCsrf;}
 async function poll(id,attempts=0){if(attempts>120){log("No result after 60s. Check Roblox Developer Console for [Vantix] poll/result errors.","warn");return;}await new Promise(r=>setTimeout(r,500));try{const res=await fetch("/api/result?placeId="+encodeURIComponent(placeId)+"&id="+encodeURIComponent(id));const data=await res.json();if(data.status==="done"){log("Done: "+data.output,"output");}else{if(attempts>0&&attempts%20===0)log("Still waiting for Roblox to post the result...","info");poll(id,attempts+1);}}catch{poll(id,attempts+1);}}
-async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("Error: "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("Error: "+e.message,"error");}run.disabled=false;run.textContent="Run";}
+async function execute(){const text=code.value.trim();if(!text)return;run.disabled=true;run.textContent="Sending...";log("> "+text,"input");try{const token=await csrf();const res=await fetch("/api/execute",{method:"POST",headers:{"Content-Type":"application/json","x-csrf-token":token},body:JSON.stringify({placeId,code:text})});const data=await res.json();if(!data.ok){log("Error: "+(data.error||"Failed to send"),"error");}else{log("Sent to the tracked server. Watch Roblox Developer Console for [Vantix exec] output.","info");poll(data.id);code.value="";}}catch(e){log("Error: "+e.message,"error");}run.disabled=false;run.textContent="Run";}
 run.addEventListener("click",execute);
 document.addEventListener("keydown",e=>{if(e.ctrlKey&&e.key==="Enter")execute();});
 log("// Connected to: ${String(execGameName || "Game").replace(/[\\`$]/g, "")} ("+placeId+")","info");
@@ -391,11 +435,7 @@ async function runExec() {
     btn.textContent = "Sending...";
     appendExecLog("> " + code, "input");
 
-    const res  = await fetch("/api/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeId: execPlaceId, code })
-    });
+    const res  = await postJson("/api/execute", { placeId: execPlaceId, code });
     const data = await res.json();
 
     if (!data.ok) {
@@ -445,7 +485,7 @@ async function loadOwnerUsers() {
 
 function filterOwnerUsers() {
     const q = document.getElementById("ownerSearch").value.toLowerCase();
-    renderOwnerUsers(ownerUsers.filter(u => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+    renderOwnerUsers(ownerUsers.filter(u => String(u.username || "").toLowerCase().includes(q) || String(u.email || "").toLowerCase().includes(q)));
 }
 
 function renderOwnerUsers(list) {
@@ -463,62 +503,22 @@ function renderOwnerUsers(list) {
                 </tr>
             </thead>
             <tbody>
-                ${list.map(u => `
+                ${list.map(u => {
+                    const username = escapeHtml(u.username);
+                    const email = escapeHtml(u.email);
+                    const tier = escapeHtml(TIER_LABELS[u.tier] || u.tier || "none");
+                    const selectId = userDomId(u.username);
+                    return `
                     <tr>
-                        <td>${u.username}</td>
-                        <td>${u.email}</td>
-                        <td>${TIER_LABELS[u.tier] || u.tier}</td>
+                        <td>${username}</td>
+                        <td>${email}</td>
+                        <td>${tier}</td>
                         <td>
-                            <select class="tier-select" id="tier-sel-${u.username}">
+                            <select class="tier-select" id="${selectId}">
                                 ${tiers.map(t => `<option value="${t}" ${u.tier === t ? "selected" : ""}>${TIER_LABELS[t]}</option>`).join("")}
                             </select>
                         </td>
                         <td>
-                            <button class="btn-save" onclick="setTier('${u.username}')">Save</button>
+                            <button class="btn-save" onclick="setTier('${jsString(u.username)}')">Save</button>
                         </td>
                     </tr>
-                `).join("")}
-            </tbody>
-        </table>`;
-}
-
-async function setTier(username) {
-    const tier = document.getElementById("tier-sel-" + username).value;
-    const res  = await fetch("/api/owner/set-tier", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, tier })
-    });
-    const data = await res.json();
-    if (data.ok) {
-        const u = ownerUsers.find(u => u.username === username);
-        if (u) u.tier = tier;
-        renderOwnerUsers(ownerUsers);
-    } else {
-        alert(data.error || "Failed to set tier");
-    }
-}
-
-// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
-document.addEventListener("keydown", e => {
-    if (e.ctrlKey && e.key === "Enter") {
-        if (!document.getElementById("execModal").classList.contains("hidden")) {
-            runExec();
-        }
-    }
-    if (e.key === "Escape") closeExecModal();
-});
-
-document.getElementById("execModal").addEventListener("click", e => {
-    if (e.target === document.getElementById("execModal")) closeExecModal();
-});
-
-document.addEventListener("click", e => {
-    const pageTarget = e.target.closest("[data-page]");
-    if (!pageTarget) return;
-    e.preventDefault();
-    showPage(pageTarget.dataset.page);
-});
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-checkSession();
