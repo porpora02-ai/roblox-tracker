@@ -421,3 +421,76 @@ app.post("/api/execute", requireLogin, requireCsrf, async (req, res) => {
         if (!status.jobId)
             return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
 
+        const id = uuidv4();
+        await Command.create({
+            id,
+            placeId,
+            jobId: status.jobId,
+            targetUsername: robloxUsername,
+            code,
+            status: "pending",
+            requestedBy: req.session.username
+        });
+        res.json({ ok: true, id });
+    } catch (e) {
+        res.json({ ok: false, error: "Could not send execute command" });
+    }
+});
+
+app.get("/api/poll", async (req, res) => {
+    try {
+        const { placeId, jobId } = req.query;
+        if (!placeId) return res.json({ commands: [] });
+        const query = { placeId, status: "pending" };
+        if (jobId) {
+            query.$or = [{ jobId: String(jobId) }, { jobId: { $exists: false } }, { jobId: "" }];
+        }
+        const cmds = await Command.find(query);
+        await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
+        res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
+    } catch { res.json({ commands: [] }); }
+});
+
+app.post("/api/result", async (req, res) => {
+    try {
+        const { placeId, id, output } = req.body;
+        if (!placeId || !id) return res.json({ ok: false });
+        await Command.findOneAndUpdate({ id, placeId }, { status: "done", output: output || "(no output)" });
+        res.json({ ok: true });
+    } catch { res.json({ ok: false }); }
+});
+
+app.get("/api/result", requireLogin, async (req, res) => {
+    try {
+        const { placeId, id } = req.query;
+        if (!placeId || !id) return res.json({ status: "unknown" });
+        const cmd = await Command.findOne({ id, placeId });
+        if (!cmd) return res.json({ status: "unknown" });
+        res.json({ status: cmd.status, output: cmd.output });
+    } catch { res.json({ status: "unknown" }); }
+});
+
+// OWNER
+app.get("/api/owner/users", requireOwner, async (req, res) => {
+    try {
+        const list = await User.find({}, { password: 0 });
+        res.json(list.map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt })));
+    } catch { res.json([]); }
+});
+
+app.post("/api/owner/set-tier", requireOwner, requireCsrf, async (req, res) => {
+    try {
+        const { username, tier } = req.body;
+        if (!TIERS[tier]) return res.json({ ok: false, error: "Invalid tier" });
+        const user = await User.findOneAndUpdate({ username }, { tier });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({ ok: true });
+    } catch { res.json({ ok: false }); }
+});
+
+// START SERVER
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+});
