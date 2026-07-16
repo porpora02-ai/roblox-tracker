@@ -84,7 +84,7 @@ function switchTab(tab) {
 }
 
 function isOwnerAccount() {
-    return currentUser && currentUser.username === "dr.muffinn" && currentUser.isOwner === true;
+    return currentUser && currentUser.username === "dr.muffinn_09" && currentUser.isOwner === true;
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
