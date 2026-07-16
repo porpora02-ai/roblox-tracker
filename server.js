@@ -75,6 +75,70 @@ const TIERS = {
 };
 
 const OWNER = "dr.muffinn";
+const AUTH_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_LIMIT_MAX = 8;
+const rateBuckets = new Map();
+const blockedEmailDomains = new Set(["1337.com", "example.com", "test.com", "mailinator.com", "tempmail.com", "10minutemail.com"]);
+
+function rateLimit(name, maxRequests, windowMs) {
+    return (req, res, next) => {
+        const ip = req.ip || req.socket?.remoteAddress || "unknown";
+        const key = `${name}:${ip}`;
+        const now = Date.now();
+        const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+        if (now > bucket.resetAt) {
+            bucket.count = 0;
+            bucket.resetAt = now + windowMs;
+        }
+        bucket.count += 1;
+        rateBuckets.set(key, bucket);
+        if (bucket.count > maxRequests) {
+            return res.status(429).json({ ok: false, error: "Too many attempts. Try again later." });
+        }
+        next();
+    };
+}
+
+function ensureCsrfToken(req) {
+    if (!req.session.csrfToken) req.session.csrfToken = uuidv4();
+    return req.session.csrfToken;
+}
+
+function requireCsrf(req, res, next) {
+    const token = req.get("x-csrf-token");
+    if (!token || token !== req.session.csrfToken) {
+        return res.status(403).json({ ok: false, error: "Invalid CSRF token" });
+    }
+    next();
+}
+
+function validateSignup({ email, username, password, dob }) {
+    if (!email || !username || !password || !dob) return "All fields required";
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanUsername = String(username).trim();
+    const cleanPassword = String(password);
+    const domain = cleanEmail.split("@")[1] || "";
+
+    if (!/^[A-Za-z0-9._%+-]{3,64}@[A-Za-z0-9.-]{2,253}\.[A-Za-z]{2,24}$/.test(cleanEmail)) {
+        return "Enter a valid email address";
+    }
+    if (blockedEmailDomains.has(domain)) {
+        return "Use a real email provider";
+    }
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(cleanUsername)) {
+        return "Username must be 3-20 letters, numbers, or underscores";
+    }
+    if (cleanPassword.length < 8) {
+        return "Password must be at least 8 characters";
+    }
+    if (!/[A-Za-z]/.test(cleanPassword) || !/[0-9]/.test(cleanPassword)) {
+        return "Password must include letters and numbers";
+    }
+    if (cleanPassword.toLowerCase() === cleanUsername.toLowerCase() || cleanPassword.toLowerCase() === cleanEmail.split("@")[0]) {
+        return "Password cannot match your username or email";
+    }
+    return "";
+}
 
 async function gamesForTier(tierKey) {
     const all = await Game.find({});
@@ -86,6 +150,7 @@ async function gamesForTier(tierKey) {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -98,7 +163,12 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: MONGO_URI }),
-    cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }
+    cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production"
+    }
 }));
 
 function requireLogin(req, res, next) {
@@ -132,6 +202,7 @@ app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css
 app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js")));
 app.get("/logo.png",  (req, res) => res.sendFile(path.join(__dirname, "logo.png")));
 app.get("/api/ping",  (req, res) => res.json({ ok: true }));
+app.get("/api/csrf",  (req, res) => res.json({ ok: true, token: ensureCsrfToken(req) }));
 
 // RESET (remove after use)
 app.get("/api/reset-users", async (req, res) => {
@@ -140,14 +211,14 @@ app.get("/api/reset-users", async (req, res) => {
 });
 
 // SIGNUP
-app.post("/api/signup", async (req, res) => {
+app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
         const { email, username, password, dob } = req.body;
-        if (!email || !username || !password || !dob)
-            return res.json({ ok: false, error: "All fields required" });
+        const validationError = validateSignup({ email, username, password, dob });
+        if (validationError) return res.json({ ok: false, error: validationError });
 
-        const cleanEmail    = email.trim().toLowerCase();
-        const cleanUsername = username.trim();
+        const cleanEmail    = String(email).trim().toLowerCase();
+        const cleanUsername = String(username).trim();
 
         const existingUser  = await User.findOne({ username: cleanUsername });
         const existingEmail = await User.findOne({ email: cleanEmail });
@@ -169,11 +240,13 @@ app.post("/api/signup", async (req, res) => {
 });
 
 // LOGIN
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", rateLimit("login", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
         const { username, password } = req.body;
         if (!username || !password) return res.json({ ok: false, error: "All fields required" });
-        const user = await User.findOne({ username: username.trim() });
+        const cleanUsername = String(username).trim();
+        if (!/^[A-Za-z0-9_]{3,20}$/.test(cleanUsername)) return res.json({ ok: false, error: "Invalid username or password" });
+        const user = await User.findOne({ username: cleanUsername });
         if (!user) return res.json({ ok: false, error: "Invalid username or password" });
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.json({ ok: false, error: "Invalid username or password" });
@@ -186,7 +259,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // LOGOUT
-app.post("/api/logout", (req, res) => req.session.destroy(() => res.json({ ok: true })));
+app.post("/api/logout", requireCsrf, (req, res) => req.session.destroy(() => res.json({ ok: true })));
 
 // ME
 app.get("/api/me", async (req, res) => {
@@ -212,7 +285,7 @@ app.get("/api/tracking", requireLogin, async (req, res) => {
     }
 });
 
-app.post("/api/tracking", requireLogin, async (req, res) => {
+app.post("/api/tracking", requireLogin, requireCsrf, async (req, res) => {
     try {
         const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
         if (robloxUsername && !/^[A-Za-z0-9_]{3,20}$/.test(robloxUsername))
@@ -241,7 +314,7 @@ app.get("/api/games", requireLogin, async (req, res) => {
 });
 
 // JOIN TOKEN
-app.post("/api/join", requireLogin, async (req, res) => {
+app.post("/api/join", requireLogin, requireCsrf, async (req, res) => {
     try {
         const { placeId } = req.body;
         if (!placeId) return res.json({ ok: false });
@@ -325,7 +398,7 @@ app.post("/api/player-status", async (req, res) => {
 });
 
 // EXECUTE
-app.post("/api/execute", requireLogin, async (req, res) => {
+app.post("/api/execute", requireLogin, requireCsrf, async (req, res) => {
     try {
         const { placeId, code } = req.body;
         if (!placeId || !String(code || "").trim()) return res.json({ ok: false, error: "Missing script" });
@@ -348,76 +421,3 @@ app.post("/api/execute", requireLogin, async (req, res) => {
         if (!status.jobId)
             return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
 
-        const id = uuidv4();
-        await Command.create({
-            id,
-            placeId,
-            jobId: status.jobId,
-            targetUsername: robloxUsername,
-            code,
-            status: "pending",
-            requestedBy: req.session.username
-        });
-        res.json({ ok: true, id });
-    } catch (e) {
-        res.json({ ok: false, error: "Could not send execute command" });
-    }
-});
-
-app.get("/api/poll", async (req, res) => {
-    try {
-        const { placeId, jobId } = req.query;
-        if (!placeId) return res.json({ commands: [] });
-        const query = { placeId, status: "pending" };
-        if (jobId) {
-            query.$or = [{ jobId: String(jobId) }, { jobId: { $exists: false } }, { jobId: "" }];
-        }
-        const cmds = await Command.find(query);
-        await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
-        res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
-    } catch { res.json({ commands: [] }); }
-});
-
-app.post("/api/result", async (req, res) => {
-    try {
-        const { placeId, id, output } = req.body;
-        if (!placeId || !id) return res.json({ ok: false });
-        await Command.findOneAndUpdate({ id, placeId }, { status: "done", output: output || "(no output)" });
-        res.json({ ok: true });
-    } catch { res.json({ ok: false }); }
-});
-
-app.get("/api/result", requireLogin, async (req, res) => {
-    try {
-        const { placeId, id } = req.query;
-        if (!placeId || !id) return res.json({ status: "unknown" });
-        const cmd = await Command.findOne({ id, placeId });
-        if (!cmd) return res.json({ status: "unknown" });
-        res.json({ status: cmd.status, output: cmd.output });
-    } catch { res.json({ status: "unknown" }); }
-});
-
-// OWNER
-app.get("/api/owner/users", requireOwner, async (req, res) => {
-    try {
-        const list = await User.find({}, { password: 0 });
-        res.json(list.map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt })));
-    } catch { res.json([]); }
-});
-
-app.post("/api/owner/set-tier", requireOwner, async (req, res) => {
-    try {
-        const { username, tier } = req.body;
-        if (!TIERS[tier]) return res.json({ ok: false, error: "Invalid tier" });
-        const user = await User.findOneAndUpdate({ username }, { tier });
-        if (!user) return res.json({ ok: false, error: "User not found" });
-        res.json({ ok: true });
-    } catch { res.json({ ok: false }); }
-});
-
-// START SERVER
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-});
