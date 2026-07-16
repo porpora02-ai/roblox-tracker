@@ -522,3 +522,45 @@ function renderOwnerUsers(list) {
                             <button class="btn-save" onclick="setTier('${jsString(u.username)}')">Save</button>
                         </td>
                     </tr>
+                `;
+                }).join("")}
+            </tbody>
+        </table>`;
+}
+
+async function setTier(username) {
+    const tier = document.getElementById(userDomId(username)).value;
+    const res  = await postJson("/api/owner/set-tier", { username, tier });
+    const data = await res.json();
+    if (data.ok) {
+        const u = ownerUsers.find(u => u.username === username);
+        if (u) u.tier = tier;
+        renderOwnerUsers(ownerUsers);
+    } else {
+        alert(data.error || "Failed to set tier");
+    }
+}
+
+// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────
+document.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.key === "Enter") {
+        if (!document.getElementById("execModal").classList.contains("hidden")) {
+            runExec();
+        }
+    }
+    if (e.key === "Escape") closeExecModal();
+});
+
+document.getElementById("execModal").addEventListener("click", e => {
+    if (e.target === document.getElementById("execModal")) closeExecModal();
+});
+
+document.addEventListener("click", e => {
+    const pageTarget = e.target.closest("[data-page]");
+    if (!pageTarget) return;
+    e.preventDefault();
+    showPage(pageTarget.dataset.page);
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+checkSession();
