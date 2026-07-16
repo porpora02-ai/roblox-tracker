@@ -6,7 +6,7 @@ const MongoStore = require("connect-mongo");
 const mongoose   = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 
-const MONGO_URI = "mongodb+srv://VantixSSw:IMBACKLOL@cluster0.nmtmzci.mongodb.net/?appName=Cluster0";
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://VantixSSw:IMBACKLOL@cluster0.nmtmzci.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
@@ -74,7 +74,7 @@ const TIERS = {
     absolute:     { maxPlayers: Infinity }
 };
 
-const OWNER = "dr.muffinn";
+const OWNER = "dr.muffinn_09";
 const AUTH_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_LIMIT_MAX = 8;
 const rateBuckets = new Map();
@@ -125,8 +125,8 @@ function validateSignup({ email, username, password, dob }) {
     if (blockedEmailDomains.has(domain)) {
         return "Use a real email provider";
     }
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(cleanUsername)) {
-        return "Username must be 3-20 letters, numbers, or underscores";
+    if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) {
+        return "Username must be 3-24 letters, numbers, dots, or underscores";
     }
     if (cleanPassword.length < 8) {
         return "Password must be at least 8 characters";
@@ -245,7 +245,7 @@ app.post("/api/login", rateLimit("login", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS),
         const { username, password } = req.body;
         if (!username || !password) return res.json({ ok: false, error: "All fields required" });
         const cleanUsername = String(username).trim();
-        if (!/^[A-Za-z0-9_]{3,20}$/.test(cleanUsername)) return res.json({ ok: false, error: "Invalid username or password" });
+        if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) return res.json({ ok: false, error: "Invalid username or password" });
         const user = await User.findOne({ username: cleanUsername });
         if (!user) return res.json({ ok: false, error: "Invalid username or password" });
         const match = await bcrypt.compare(password, user.password);
