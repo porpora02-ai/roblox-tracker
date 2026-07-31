@@ -6,7 +6,7 @@ const MongoStore = require("connect-mongo");
 const mongoose   = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://ethanghattas_db_user:<db_password>@vantic.hwqfsfm.mongodb.net/?appName=VANTIC";
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://porpora02_db_user:N4UW39U7FZvORDhZ@cluster0.fhasxmx.mongodb.net/?appName=Cluster0";
 
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
