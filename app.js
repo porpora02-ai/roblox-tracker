@@ -162,6 +162,8 @@ const TIER_LABELS = {
 function enterApp() {
     showPage("appPage");
     document.getElementById("userLabel").textContent = currentUser.username;
+    const avatarEl = document.getElementById("accountAvatar");
+    if (avatarEl) avatarEl.textContent = (currentUser.username || "V").slice(0, 1).toUpperCase();
     document.getElementById("tierBadge").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
     document.getElementById("profileUsername").textContent = currentUser.username;
     document.getElementById("profileTier").textContent = TIER_LABELS[currentUser.tier] || "No Tier";
@@ -200,7 +202,7 @@ function renderGames() {
     );
 
     if (filtered.length === 0) {
-        grid.innerHTML = `<div class="no-games"><h3>${currentUser.tier === "none" ? "No tier yet" : "No games found"}</h3><p>${currentUser.tier === "none" ? "Go to Upgrade tab to get a tier." : "No tracked games visible for your tier right now."}</p></div>`;
+        grid.innerHTML = `<div class="no-games"><div class="no-games-mark"></div><h3>${currentUser.tier === "none" ? "No tier yet" : "No games found"}</h3><p>${currentUser.tier === "none" ? "Head to the Upgrade tab to unlock tracked servers." : "No tracked games match your tier or search right now."}</p></div>`;
         return;
     }
 
@@ -208,22 +210,30 @@ function renderGames() {
         const name = escapeHtml(g.name || "Unknown");
         const rawName = g.name || "Unknown";
         const placeId = escapeHtml(g.placeId || "");
-        const icon = escapeHtml(g.icon || "https://placehold.co/400x160/030a06/00ff88?text=Vantix");
+        const icon = escapeHtml(g.icon || "");
         const creator = escapeHtml(g.creator || "Unknown");
         const players = Number(g.players) || 0;
+        const heat = players === 0 ? "empty" : players < 10 ? "low" : players < 100 ? "mid" : "high";
         return `
         <div class="game-card">
-            <img src="${icon}" alt="${name}">
+            <div class="game-thumb" data-initial="${name.slice(0, 1).toUpperCase()}">
+                ${icon ? `<img src="${icon}" alt="" loading="lazy" onerror="this.classList.add('img-fail')">` : ""}
+                <div class="thumb-scrim"></div>
+                <div class="thumb-pills">
+                    <span class="live-pill heat-${heat}"><i></i>${players} online</span>
+                    ${g.earlyAccess ? '<span class="ea-pill">Early Access</span>' : ""}
+                </div>
+            </div>
             <div class="game-info">
-                <h3>${name}</h3>
+                <h3 title="${name}">${name}</h3>
                 <div class="game-meta">
-                    <span>Players: <b>${players}</b></span>
-                    <span>Place ID: <b>${placeId}</b></span>
-                    <span>Creator: <b>${creator}</b></span>
-                    ${g.earlyAccess ? '<span><b>Early Access</b></span>' : ""}
+                    <span class="meta-row"><em>Creator</em><b>${creator}</b></span>
+                    <span class="meta-row"><em>Place ID</em><b>${placeId}</b></span>
                 </div>
                 <div class="game-actions">
-                    <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">Join Game</button>
+                    <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">
+                        <span>Join Game</span>
+                    </button>
                 </div>
             </div>
         </div>
