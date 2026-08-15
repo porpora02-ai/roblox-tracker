@@ -224,7 +224,6 @@ function renderGames() {
                 </div>
                 <div class="game-actions">
                     <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">Join Game</button>
-                    <button class="btn-exec" onclick="openExec('${jsString(g.placeId)}', '${jsString(rawName)}')">Execute</button>
                 </div>
             </div>
         </div>
