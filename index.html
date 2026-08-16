@@ -596,4 +596,42 @@
             </div>
         </div>
 
-        <div id="tab
+        <div id="tab-owner" class="tab-content hidden">
+            <div class="tab-header">
+                <h2>Owner Panel</h2>
+                <p class="tab-sub">Manage user tiers</p>
+            </div>
+            <div class="owner-search-row">
+                <div class="search-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input id="ownerSearch" placeholder="Search users..." class="search-inp" oninput="filterOwnerUsers()">
+                </div>
+            </div>
+            <div id="ownerUsersTable"></div>
+        </div>
+    </main>
+</div>
+
+<div id="execModal" class="modal-overlay hidden">
+    <div class="modal">
+        <div class="modal-header">
+            <span id="execModalTitle">Script Execution</span>
+            <div class="modal-header-actions">
+                <button onclick="popoutExec()" class="modal-popout" title="Pop out executor">Open</button>
+                <button onclick="closeExecModal()" class="modal-close">Close</button>
+            </div>
+        </div>
+        <div id="execOutput"></div>
+        <div class="modal-input-area">
+            <textarea id="execCode" placeholder="-- Enter Lua code&#10;print('Hello from server!')" rows="4" spellcheck="false"></textarea>
+            <div class="modal-actions">
+                <span class="hint">Ctrl+Enter to run</span>
+                <button id="execRunBtn" onclick="runExec()">Run</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
