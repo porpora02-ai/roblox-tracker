@@ -1,637 +1,879 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vantix</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css">
-</head>
-<body>
+const express    = require("express");
+const path       = require("path");
+const crypto     = require("crypto");
+const bcrypt     = require("bcryptjs");
+const session    = require("express-session");
+const MongoStore = require("connect-mongo");
+const mongoose   = require("mongoose");
+const { v4: uuidv4 } = require("uuid");
 
-<div id="cursorGlow"></div>
-<div class="bg-grid"></div>
-<div class="bg-orb bg-orb-a"></div>
-<div class="bg-orb bg-orb-b"></div>
+const IS_PROD = process.env.NODE_ENV === "production";
 
-<div id="landingPage" class="page">
-    <nav class="land-nav">
-        <div class="logo"><i class="logo-dot"></i>VANTIX</div>
-        <div class="land-nav-btns">
-            <button type="button" data-page="loginPage" onclick="showPage('loginPage')" class="btn-ghost">Log In</button>
-            <button type="button" data-page="signupPage" onclick="showPage('signupPage')" class="btn-primary">Get Started</button>
-        </div>
-    </nav>
+// ─── SECRETS ──────────────────────────────────────────────────────────────────
+// Nothing sensitive is hardcoded. The server refuses to boot without these.
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+    console.error("MONGO_URI is not set. Add your MongoDB connection string to the environment and restart.");
+    // Names only, never values — helps spot a typo'd or missing key in the host's dashboard.
+    const visible = Object.keys(process.env)
+        .filter(k => /mongo|session|node_env|port/i.test(k))
+        .sort();
+    console.error("Config-related keys this process can see:", visible.length ? visible.join(", ") : "(none)");
+    process.exit(1);
+}
 
-    <div class="hero">
-        <div class="hero-badge"><i></i>Roblox Game Intelligence</div>
-        <h1 class="hero-title">Track Every<br><span class="green-text">Active Server</span></h1>
-        <p class="hero-sub">Real-time Roblox game tracking with tier-based access. Find low-population servers and get the edge you need.</p>
-        <div class="hero-btns">
-            <button type="button" data-page="signupPage" onclick="showPage('signupPage')" class="btn-primary btn-lg">Create Account</button>
-            <button type="button" data-page="loginPage" onclick="showPage('loginPage')" class="btn-ghost btn-lg">Log In</button>
-        </div>
+// In production a stable secret is required, otherwise every restart would
+// invalidate all sessions. In development one is generated per boot.
+const SESSION_SECRET = process.env.SESSION_SECRET
+    || (IS_PROD ? "" : crypto.randomBytes(32).toString("hex"));
+if (!SESSION_SECRET) {
+    console.error("SESSION_SECRET is not set. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"");
+    process.exit(1);
+}
+if (!process.env.SESSION_SECRET) {
+    console.warn("SESSION_SECRET not set. Using a temporary secret; sessions will not survive a restart.");
+}
 
-        <div class="hero-stats">
-            <div class="hero-stat"><strong>5s</strong><span>Live refresh</span></div>
-            <div class="hero-divider"></div>
-            <div class="hero-stat"><strong>8</strong><span>Access tiers</span></div>
-            <div class="hero-divider"></div>
-            <div class="hero-stat"><strong>24/7</strong><span>Server tracking</span></div>
-        </div>
-    </div>
+// ─── ROBLOX VERIFICATION ──────────────────────────────────────────────────────
+// Accounts are verified by proving control of a Roblox profile: the user pastes
+// a one-time code into their profile's About section and we read it back from
+// Roblox's public API. No email provider involved.
+const CODE_TTL_MS       = 30 * 60 * 1000;
+const MAX_CODE_ATTEMPTS = 12;
 
-    <div class="land-section">
-        <div class="section-label">Access Tiers</div>
-        <h2 class="section-title">Pick your ceiling</h2>
-        <div class="tier-preview">
-            <div class="tier-card-sm">Bronze<span>10 players</span></div>
-            <div class="tier-card-sm">Silver<span>80 players</span></div>
-            <div class="tier-card-sm">Gold<span>100 players</span></div>
-            <div class="tier-card-sm">Diamond<span>150 players</span></div>
-            <div class="tier-card-sm best">Absolute<span>No limit</span></div>
-        </div>
-    </div>
+function newCode() {
+    return "VANTIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+}
 
-    <div class="land-section">
-        <div class="section-label">How it works</div>
-        <h2 class="section-title">Three steps to live data</h2>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <div class="feature-num">01</div>
-                <h3>Create an account</h3>
-                <p>Sign up and verify your Roblox account with a one-time profile code. No email confirmation needed.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-num">02</div>
-                <h3>Bind your username</h3>
-                <p>Link your Roblox username under Tracking so Vantix recognises you the moment you join.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-num">03</div>
-                <h3>Join and go</h3>
-                <p>Browse live tracked servers, hit Join, and your in-game panel loads automatically.</p>
-            </div>
-        </div>
-    </div>
+async function robloxJson(url, options) {
+    const res = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options?.headers || {}) }
+    });
+    if (!res.ok) {
+        const err = new Error(`Roblox API ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+    return res.json();
+}
 
-    <footer class="land-footer">
-        <div class="logo sm"><i class="logo-dot"></i>VANTIX</div>
-        <span>Real-time Roblox server intelligence</span>
-    </footer>
-</div>
+// Resolves a Roblox username to its account. Returns null when no such user exists.
+async function robloxLookup(username) {
+    const data = await robloxJson("https://users.roblox.com/v1/usernames/users", {
+        method: "POST",
+        body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
+    });
+    const hit = data?.data?.[0];
+    if (!hit?.id) return null;
+    return { id: hit.id, name: hit.name, displayName: hit.displayName || hit.name };
+}
 
-<div id="signupPage" class="page auth-page hidden">
-    <div class="auth-shell">
-        <div class="auth-brand">
-            <div class="logo"><i class="logo-dot"></i>VANTIX</div>
-            <h2>Start tracking<br>in under a minute.</h2>
-            <ul class="auth-points">
-                <li><i></i>Live server population, refreshed every 5 seconds</li>
-                <li><i></i>Tier-based access from Bronze to Absolute</li>
-                <li><i></i>Automatic in-game panel on whitelisted join</li>
-            </ul>
-            <div class="auth-brand-glow"></div>
-        </div>
-        <div class="auth-box">
-            <h2>Create Account</h2>
-            <p class="auth-sub">Join Vantix to start tracking</p>
-            <div id="signupError" class="error-msg hidden"></div>
-            <div class="field">
-                <label for="su-email">Email</label>
-                <input id="su-email" type="email" placeholder="you@example.com" class="inp" autocomplete="email">
-            </div>
-            <div class="field">
-                <label for="su-username">Username</label>
-                <input id="su-username" type="text" placeholder="Choose a username" class="inp" autocomplete="username">
-            </div>
-            <div class="field">
-                <label for="su-password">Password</label>
-                <input id="su-password" type="password" placeholder="At least 8 characters" class="inp" autocomplete="new-password">
-            </div>
-            <div class="field">
-                <label for="su-roblox">Roblox Username</label>
-                <input id="su-roblox" type="text" placeholder="Your Roblox username" class="inp" maxlength="20">
-                <p class="field-hint">You'll verify this account in the next step.</p>
-            </div>
-            <div class="field">
-                <label for="su-dob">Date of Birth</label>
-                <input id="su-dob" type="date" class="inp" style="color-scheme:dark;">
-            </div>
-            <button id="signupBtn" onclick="doSignup()" class="btn-primary full">Create Account</button>
-            <p class="auth-switch">Already have an account? <a data-page="loginPage" onclick="showPage('loginPage')">Log in</a></p>
-            <p class="auth-switch"><a data-page="landingPage" onclick="showPage('landingPage')">Back to home</a></p>
-        </div>
-    </div>
-</div>
+// Reads the profile's About text, which is where the verification code goes.
+async function robloxDescription(userId) {
+    const data = await robloxJson(`https://users.roblox.com/v1/users/${userId}`);
+    return String(data?.description || "");
+}
 
-<div id="loginPage" class="page auth-page hidden">
-    <div class="auth-shell">
-        <div class="auth-brand">
-            <div class="logo"><i class="logo-dot"></i>VANTIX</div>
-            <h2>Welcome back<br>to the console.</h2>
-            <ul class="auth-points">
-                <li><i></i>Your tracked servers are still live</li>
-                <li><i></i>Population data updates automatically</li>
-                <li><i></i>Pick up exactly where you left off</li>
-            </ul>
-            <div class="auth-brand-glow"></div>
-        </div>
-        <div class="auth-box">
-            <h2>Welcome Back</h2>
-            <p class="auth-sub">Log in to your Vantix account</p>
-            <div id="loginError" class="error-msg hidden"></div>
-            <p id="loginNotice" class="form-status hidden"></p>
-            <div class="field">
-                <label for="li-username">Username</label>
-                <input id="li-username" type="text" placeholder="Your username" class="inp" autocomplete="username">
-            </div>
-            <div class="field">
-                <div class="field-head">
-                    <label for="li-password">Password</label>
-                    <a class="field-link" onclick="openForgotPage()">Forgot password?</a>
-                </div>
-                <input id="li-password" type="password" placeholder="Your password" class="inp" autocomplete="current-password">
-            </div>
-            <button onclick="doLogin()" class="btn-primary full">Log In</button>
-            <p class="auth-switch">No account? <a data-page="signupPage" onclick="showPage('signupPage')">Sign up</a></p>
-            <p class="auth-switch"><a data-page="landingPage" onclick="showPage('landingPage')">Back to home</a></p>
-        </div>
-    </div>
-</div>
+async function robloxAvatar(userId) {
+    try {
+        const data = await robloxJson(
+            `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`
+        );
+        return data?.data?.[0]?.imageUrl || "";
+    } catch {
+        return "";
+    }
+}
 
-<div id="verifyPage" class="page auth-page hidden">
-    <div class="auth-shell narrow">
-        <div class="auth-box">
-            <div class="profile-head">
-                <img id="verifyAvatar" class="roblox-avatar hidden" alt="" onerror="this.classList.add('hidden')">
-                <div>
-                    <h2>Verify your Roblox account</h2>
-                    <p class="auth-sub">Prove you own <b id="verifyRoblox">your Roblox account</b>.</p>
-                </div>
-            </div>
+// ─── SCHEMAS ──────────────────────────────────────────────────────────────────
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    email:    { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    dob:      String,
+    tier:     { type: String, default: "none" },
+    robloxUsername: String,
+    robloxUserId:   Number,
+    robloxVerified: { type: Boolean, default: false },
+    joinedAt: { type: Date, default: Date.now },
+    verifyCode:     String,
+    verifyExpires:  Date,
+    verifyAttempts: { type: Number, default: 0 },
+    resetCode:      String,
+    resetExpires:   Date,
+    resetAttempts:  { type: Number, default: 0 },
+    passwordChangedAt: Date
+});
+const gameSchema = new mongoose.Schema({
+    placeId:     { type: String, required: true, unique: true },
+    name:        String,
+    players:     { type: Number, default: 0 },
+    creator:     String,
+    icon:        String,
+    earlyAccess: { type: Boolean, default: false },
+    updated:     { type: Date, default: Date.now }
+});
+const tokenSchema = new mongoose.Schema({
+    token:    { type: String, required: true, unique: true },
+    username: String,
+    placeId:  String,
+    used:     { type: Boolean, default: false },
+    createdAt:{ type: Date, default: Date.now, expires: 600 }
+});
+const commandSchema = new mongoose.Schema({
+    id:          { type: String, required: true },
+    placeId:     String,
+    jobId:       String,
+    action:      { type: String, default: "execute" },
+    targetUsername: String,
+    code:        String,
+    status:      { type: String, default: "pending" },
+    output:      String,
+    requestedBy: String,
+    ts:          { type: Date, default: Date.now, expires: 3600 }
+});
+const playerStatusSchema = new mongoose.Schema({
+    robloxUsername: { type: String, required: true, unique: true },
+    displayName:    String,
+    userId:         Number,
+    placeId:        String,
+    jobId:          String,
+    gameName:       String,
+    online:         { type: Boolean, default: false },
+    lastSeen:       { type: Date, default: Date.now }
+});
 
-            <div id="verifyError" class="error-msg hidden"></div>
-            <p id="verifyStatus" class="form-status hidden"></p>
+const User    = mongoose.model("User",    userSchema);
+const Game    = mongoose.model("Game",    gameSchema);
+const Token   = mongoose.model("Token",   tokenSchema);
+const Command = mongoose.model("Command", commandSchema);
+const PlayerStatus = mongoose.model("PlayerStatus", playerStatusSchema);
 
-            <ol class="steps">
-                <li><span>1</span><p>Copy the code below</p></li>
-                <li><span>2</span><p>Paste it anywhere in your Roblox profile's <b>About</b> section, then save on Roblox</p></li>
-                <li><span>3</span><p>Come back and press Verify</p></li>
-            </ol>
+const TIERS = {
+    none:         { maxPlayers: 0        },
+    bronze:       { maxPlayers: 10       },
+    silver:       { maxPlayers: 80       },
+    gold:         { maxPlayers: 100      },
+    diamond:      { maxPlayers: 150      },
+    platinum:     { maxPlayers: 500      },
+    early_access: { maxPlayers: 0, earlyOnly: true },
+    elite:        { maxPlayers: 1000     },
+    absolute:     { maxPlayers: Infinity }
+};
 
-            <div class="code-box">
-                <code id="verifyCode">VANTIX-000000</code>
-                <button class="code-copy" onclick="copyCode('verifyCode','verifyStatus')" title="Copy code">Copy</button>
-            </div>
+const OWNER = "dr.muffinn_09";
+const AUTH_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_LIMIT_MAX = 8;
+const rateBuckets = new Map();
+const blockedEmailDomains = new Set(["1337.com", "example.com", "test.com", "mailinator.com", "tempmail.com", "10minutemail.com"]);
 
-            <a class="ext-link" href="https://www.roblox.com/my/account#!/info" target="_blank" rel="noopener noreferrer">Open Roblox profile settings →</a>
+function rateLimit(name, maxRequests, windowMs) {
+    return (req, res, next) => {
+        const ip = req.ip || req.socket?.remoteAddress || "unknown";
+        const key = `${name}:${ip}`;
+        const now = Date.now();
+        const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+        if (now > bucket.resetAt) {
+            bucket.count = 0;
+            bucket.resetAt = now + windowMs;
+        }
+        bucket.count += 1;
+        rateBuckets.set(key, bucket);
+        if (bucket.count > maxRequests) {
+            return res.status(429).json({ ok: false, error: "Too many attempts. Try again later." });
+        }
+        next();
+    };
+}
 
-            <button id="verifyBtn" onclick="doVerifyRoblox()" class="btn-primary full">I've added it — Verify</button>
-            <p class="auth-switch">Code not working? <a onclick="newVerifyCode()">Generate a new one</a></p>
-            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
-        </div>
-    </div>
-</div>
+function ensureCsrfToken(req) {
+    if (!req.session.csrfToken) req.session.csrfToken = uuidv4();
+    return req.session.csrfToken;
+}
 
-<div id="forgotPage" class="page auth-page hidden">
-    <div class="auth-shell narrow">
-        <div class="auth-box">
-            <div class="auth-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </div>
-            <h2>Forgot password</h2>
-            <p class="auth-sub">Enter your Vantix username. You'll reset it by proving you still own the linked Roblox account.</p>
-            <div id="forgotError" class="error-msg hidden"></div>
-            <p id="forgotStatus" class="form-status hidden"></p>
-            <div class="field">
-                <label for="fp-username">Vantix username</label>
-                <input id="fp-username" type="text" placeholder="Your username" class="inp" autocomplete="username">
-            </div>
-            <button onclick="doForgotPassword()" class="btn-primary full">Continue</button>
-            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
-        </div>
-    </div>
-</div>
+function requireCsrf(req, res, next) {
+    const token = req.get("x-csrf-token");
+    if (!token || token !== req.session.csrfToken) {
+        return res.status(403).json({ ok: false, error: "Invalid CSRF token" });
+    }
+    next();
+}
 
-<div id="resetPage" class="page auth-page hidden">
-    <div class="auth-shell narrow">
-        <div class="auth-box">
-            <div class="profile-head">
-                <img id="resetAvatar" class="roblox-avatar hidden" alt="" onerror="this.classList.add('hidden')">
-                <div>
-                    <h2>Set a new password</h2>
-                    <p class="auth-sub">Verify <b id="resetRoblox">your Roblox account</b> to continue.</p>
-                </div>
-            </div>
+function validatePassword(password, username, email) {
+    const cleanPassword = String(password || "");
+    if (cleanPassword.length < 8) return "Password must be at least 8 characters";
+    if (!/[A-Za-z]/.test(cleanPassword) || !/[0-9]/.test(cleanPassword)) {
+        return "Password must include letters and numbers";
+    }
+    const localPart = String(email || "").split("@")[0];
+    if (username && cleanPassword.toLowerCase() === String(username).toLowerCase()) {
+        return "Password cannot match your username or email";
+    }
+    if (localPart && cleanPassword.toLowerCase() === localPart.toLowerCase()) {
+        return "Password cannot match your username or email";
+    }
+    return "";
+}
 
-            <div id="resetError" class="error-msg hidden"></div>
-            <p id="resetStatus" class="form-status hidden"></p>
+function validateSignup({ email, username, password, dob, robloxUsername }) {
+    if (!email || !username || !password || !dob) return "All fields required";
+    if (!robloxUsername) return "Enter your Roblox username";
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanUsername = String(username).trim();
+    const domain = cleanEmail.split("@")[1] || "";
 
-            <ol class="steps">
-                <li><span>1</span><p>Paste this code into your Roblox profile's <b>About</b> section and save</p></li>
-                <li><span>2</span><p>Choose a new password below</p></li>
-                <li><span>3</span><p>Press Verify &amp; Set Password</p></li>
-            </ol>
+    if (!/^[A-Za-z0-9._%+-]{3,64}@[A-Za-z0-9.-]{2,253}\.[A-Za-z]{2,24}$/.test(cleanEmail)) {
+        return "Enter a valid email address";
+    }
+    if (blockedEmailDomains.has(domain)) {
+        return "Use a real email provider";
+    }
+    if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) {
+        return "Username must be 3-24 letters, numbers, dots, or underscores";
+    }
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(String(robloxUsername).trim())) {
+        return "Enter a valid Roblox username";
+    }
+    return validatePassword(password, cleanUsername, cleanEmail);
+}
 
-            <div class="code-box">
-                <code id="resetCode">VANTIX-000000</code>
-                <button class="code-copy" onclick="copyCode('resetCode','resetStatus')" title="Copy code">Copy</button>
-            </div>
+async function gamesForTier(tierKey) {
+    const all = await Game.find({});
+    if (tierKey === "absolute") return all;
+    if (tierKey === "early_access") return all.filter(g => g.earlyAccess);
+    const tier = TIERS[tierKey];
+    if (!tier) return [];
+    return all.filter(g => !g.earlyAccess && g.players < tier.maxPlayers);
+}
 
-            <a class="ext-link" href="https://www.roblox.com/my/account#!/info" target="_blank" rel="noopener noreferrer">Open Roblox profile settings →</a>
+const app = express();
+app.set("trust proxy", 1);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-            <div class="field">
-                <label for="rp-password">New password</label>
-                <input id="rp-password" type="password" placeholder="At least 8 characters" class="inp" autocomplete="new-password">
-            </div>
-            <button id="resetBtn" onclick="doResetPassword()" class="btn-primary full">Verify &amp; Set Password</button>
-            <p class="auth-switch">Code not working? <a onclick="newResetCode()">Generate a new one</a></p>
-            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
-        </div>
-    </div>
-</div>
+mongoose.connect(MONGO_URI)
+    .then(async () => {
+        console.log("MongoDB connected");
+        // Accounts created before verification shipped stay usable.
+        const grandfathered = await User.updateMany(
+            { robloxVerified: { $exists: false } },
+            { $set: { robloxVerified: true } }
+        );
+        if (grandfathered.modifiedCount) {
+            console.log(`Grandfathered ${grandfathered.modifiedCount} existing account(s) as verified.`);
+        }
+    })
+    .catch(e => { console.error("MongoDB failed:", e.message); process.exit(1); });
 
-<div id="appPage" class="page hidden">
-    <aside class="sidebar">
-        <div class="sidebar-brand">
-            <img src="https://cdn.discordapp.com/attachments/1514112890087411825/1527907736111677520/IMG_1516.png?ex=6a5c5e77&is=6a5b0cf7&hm=6a6f952a5961b34b5265023bffd5045cc7af8d4739514a60f572613ed264287f" alt="Vantix" onerror="this.classList.add('logo-missing')">
-            <div>
-                <strong>VANTIX</strong>
-                <span>CONSOLE</span>
-            </div>
-        </div>
-        <div class="tabs side-tabs">
-            <div class="side-group">Main</div>
-            <button class="tab active" onclick="switchTab('overview')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>Overview
-            </button>
-            <button class="tab" onclick="switchTab('games')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><rect x="2" y="6" width="20" height="12" rx="6"/></svg></span>Games
-            </button>
-            <button class="tab" onclick="switchTab('favorites')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Favorites
-            </button>
-            <button class="tab" onclick="switchTab('stats')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats
-            </button>
-            <button class="tab" onclick="switchTab('tracking')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg></span>Tracking
-            </button>
+app.use(session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: MONGO_URI }),
+    cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production"
+    }
+}));
 
-            <div class="side-group">Account</div>
-            <button class="tab" onclick="switchTab('profile')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Profile
-            </button>
-            <button class="tab" onclick="switchTab('security')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Security
-            </button>
-            <button class="tab" onclick="switchTab('settings')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6V4a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings
-            </button>
-            <button class="tab" onclick="switchTab('upgrade')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>Upgrade
-            </button>
-            <button class="tab" onclick="switchTab('help')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>Help
-            </button>
-            <button class="tab owner-tab hidden" id="ownerTabBtn" onclick="switchTab('owner')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>Owner
-            </button>
-        </div>
-        <div class="sidebar-account">
-            <div class="account-row">
-                <div class="account-avatar" id="accountAvatar">V</div>
-                <div class="account-meta">
-                    <span id="userLabel" class="user-label"></span>
-                    <span id="tierBadge" class="tier-badge"></span>
-                </div>
-            </div>
-            <button onclick="doLogout()" class="btn-ghost sm full">Log Out</button>
-        </div>
-    </aside>
+function requireLogin(req, res, next) {
+    if (!req.session.username) return res.status(401).json({ ok: false, error: "Not logged in" });
+    next();
+}
+function requireOwner(req, res, next) {
+    if (req.session.username !== OWNER) return res.status(403).json({ ok: false, error: "Forbidden" });
+    next();
+}
+function cleanRobloxUsername(username) {
+    return String(username || "").trim().replace(/^@/, "");
+}
+function trackingPayload(user, status) {
+    const lastSeen = status?.lastSeen || null;
+    const isFresh = lastSeen && Date.now() - new Date(lastSeen).getTime() < 30000;
+    return {
+        ok: true,
+        robloxUsername: user.robloxUsername || "",
+        online: !!(status?.online && isFresh),
+        placeId: status?.placeId || "",
+        jobId: status?.jobId || "",
+        gameName: status?.gameName || "",
+        lastSeen
+    };
+}
 
-    <main class="app-main">
-        <div id="tab-overview" class="tab-content">
-            <div class="tab-header">
-                <h2>Overview</h2>
-                <p class="tab-sub">Welcome back. Your account and tracked game tools are ready.</p>
-            </div>
-            <div class="overview-grid">
-                <div class="overview-card">
-                    <div class="ov-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
-                    <span id="overviewTier">No Tier</span><p>Current Tier</p>
-                </div>
-                <div class="overview-card">
-                    <div class="ov-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/></svg></div>
-                    <span id="overviewGames">0</span><p>Visible Games</p>
-                </div>
-                <div class="overview-card">
-                    <div class="ov-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg></div>
-                    <span id="overviewTracking">Offline</span><p>Tracked Player</p>
-                </div>
-            </div>
-            <div class="overview-wide">
-                <div class="command-panel">
-                    <div>
-                        <h3>Command Center</h3>
-                        <p>Browse your tracked games, join a whitelisted server, and your in-game panel loads automatically.</p>
-                    </div>
-                    <button class="btn-primary" onclick="switchTab('games')">Open Games</button>
-                </div>
-                <div class="status-list">
-                    <div><span></span><strong>API</strong><p>Online</p></div>
-                    <div><span></span><strong>Tracker</strong><p>Ready</p></div>
-                    <div><span></span><strong>Refresh</strong><p>Every 5s</p></div>
-                </div>
-            </div>
-            <div class="quick-panel">
-                <h3>Quick Links</h3>
-                <div class="quick-actions">
-                    <button class="btn-primary" onclick="switchTab('games')">Browse Games</button>
-                    <button class="btn-ghost" onclick="switchTab('favorites')">Favorites</button>
-                    <button class="btn-ghost" onclick="switchTab('stats')">Stats</button>
-                    <button class="btn-ghost" onclick="switchTab('tracking')">Tracking</button>
-                    <button class="btn-ghost" onclick="switchTab('security')">Security</button>
-                </div>
-            </div>
-            <div class="activity-panel">
-                <h3>Session Notes</h3>
-                <div class="activity-line"><span></span>Use Tracking to bind your Roblox username.</div>
-                <div class="activity-line"><span></span>Games refresh automatically while you are signed in.</div>
-                <div class="activity-line"><span></span>Joining a whitelisted server loads your panel in-game.</div>
-            </div>
-        </div>
+// Issues a fresh profile code of the given kind ("verify" or "reset").
+async function issueCode(user, kind) {
+    const field = kind === "verify" ? "verify" : "reset";
+    const code = newCode();
+    user[`${field}Code`]     = code;
+    user[`${field}Expires`]  = new Date(Date.now() + CODE_TTL_MS);
+    user[`${field}Attempts`] = 0;
+    await user.save();
+    return code;
+}
 
-        <div id="tab-games" class="tab-content hidden">
-            <div class="tab-header">
-                <div class="header-row">
-                    <div>
-                        <h2>Tracked Games</h2>
-                        <p class="tab-sub">Live server population, refreshed automatically.</p>
-                    </div>
-                    <div class="header-tools">
-                        <span class="count-chip" id="gamesCount">0 of 0</span>
-                        <div class="live-indicator"><i></i>Live</div>
-                    </div>
-                </div>
-                <div class="search-wrap">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input id="gameSearch" placeholder="Search games..." class="search-inp" oninput="renderGames()">
-                </div>
-            </div>
-            <div id="gamesGrid"></div>
-        </div>
+// Checks the user's Roblox About text for their pending code.
+// Returns { ok: true } or { ok: false, error }.
+async function checkProfileCode(user, kind) {
+    const field   = kind === "verify" ? "verify" : "reset";
+    const code    = user[`${field}Code`];
+    const expires = user[`${field}Expires`];
 
-        <div id="tab-favorites" class="tab-content hidden">
-            <div class="tab-header">
-                <div class="header-row">
-                    <div>
-                        <h2>Favorites</h2>
-                        <p class="tab-sub">Games you pinned with the star. Saved on this device only.</p>
-                    </div>
-                    <span class="count-chip"><b id="favoritesCount">0</b> pinned</span>
-                </div>
-            </div>
-            <div id="favoritesGrid"></div>
-        </div>
+    if (!code || !expires) return { ok: false, error: "Request a new code first." };
+    if (Date.now() > new Date(expires).getTime()) return { ok: false, error: "That code expired. Generate a new one." };
+    if ((user[`${field}Attempts`] || 0) >= MAX_CODE_ATTEMPTS) {
+        return { ok: false, error: "Too many checks. Generate a new code." };
+    }
+    if (!user.robloxUserId) return { ok: false, error: "No Roblox profile is linked to this account." };
 
-        <div id="tab-stats" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Stats</h2>
-                <p class="tab-sub">A live breakdown of every server your tier can see.</p>
-            </div>
-            <div id="statsGrid" class="stats-grid"></div>
-            <div id="statsHighlight" class="stats-highlight"></div>
-        </div>
+    let description = "";
+    try {
+        description = await robloxDescription(user.robloxUserId);
+    } catch (e) {
+        console.error("Roblox profile fetch failed:", e.message);
+        return { ok: false, error: "Could not reach Roblox right now. Try again in a moment." };
+    }
 
-        <div id="tab-tracking" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Player Tracking</h2>
-                <p class="tab-sub">Set the Roblox username Vantix should recognize when they join a connected game.</p>
-            </div>
-            <div class="tracking-panel">
-                <label for="trackUsername">Roblox Username</label>
-                <div class="tracking-row">
-                    <input id="trackUsername" placeholder="Roblox username" class="search-inp" maxlength="20">
-                    <button onclick="saveTracking()" class="btn-primary">Save</button>
-                </div>
-                <p id="trackStatus" class="track-status">No Roblox username set.</p>
-            </div>
-        </div>
+    if (!description.toUpperCase().includes(code.toUpperCase())) {
+        user[`${field}Attempts`] = (user[`${field}Attempts`] || 0) + 1;
+        await user.save();
+        return {
+            ok: false,
+            error: "Code not found in your Roblox profile yet. Paste it into your About section, save on Roblox, then try again."
+        };
+    }
 
-        <div id="tab-security" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Security</h2>
-                <p class="tab-sub">Your account details, email verification status, and password.</p>
-            </div>
-            <div class="security-grid">
-                <div class="settings-panel">
-                    <h3>Account</h3>
-                    <div class="account-head">
-                        <img id="accountAvatarImg" class="roblox-avatar hidden" alt="" onerror="this.classList.add('hidden')">
-                        <div id="verifyBadge" class="verify-badge unverified">Roblox profile not verified</div>
-                    </div>
-                    <div id="accountRows" class="kv-list"></div>
-                </div>
-                <div class="settings-panel">
-                    <h3>Change Password</h3>
-                    <div class="field">
-                        <label for="cp-current">Current password</label>
-                        <input id="cp-current" type="password" class="inp" autocomplete="current-password" placeholder="Current password">
-                    </div>
-                    <div class="field">
-                        <label for="cp-new">New password</label>
-                        <input id="cp-new" type="password" class="inp" autocomplete="new-password" placeholder="At least 8 characters">
-                    </div>
-                    <div class="field">
-                        <label for="cp-confirm">Confirm new password</label>
-                        <input id="cp-confirm" type="password" class="inp" autocomplete="new-password" placeholder="Repeat new password">
-                    </div>
-                    <p id="changePwStatus" class="form-status hidden"></p>
-                    <button onclick="doChangePassword()" class="btn-primary full">Update Password</button>
-                </div>
-            </div>
-        </div>
+    user[`${field}Code`]     = undefined;
+    user[`${field}Expires`]  = undefined;
+    user[`${field}Attempts`] = 0;
+    return { ok: true };
+}
 
-        <div id="tab-settings" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Settings</h2>
-                <p class="tab-sub">Everything here is saved in this browser only.</p>
-            </div>
-            <div class="settings-grid">
-                <div class="settings-panel">
-                    <h3>Appearance</h3>
-                    <div class="accent-row">
-                        <span class="setting-label">Accent color</span>
-                        <div class="accent-swatches">
-                            <button class="accent-swatch" data-accent="green" style="--sw:#00ff88" title="Green"></button>
-                            <button class="accent-swatch" data-accent="cyan" style="--sw:#22d3ee" title="Cyan"></button>
-                            <button class="accent-swatch" data-accent="violet" style="--sw:#a78bfa" title="Violet"></button>
-                            <button class="accent-swatch" data-accent="amber" style="--sw:#fbbf24" title="Amber"></button>
-                            <button class="accent-swatch" data-accent="rose" style="--sw:#fb7185" title="Rose"></button>
-                        </div>
-                    </div>
-                    <label class="setting-row"><span>Cursor glow</span><input id="setCursorGlow" type="checkbox" onchange="updateSetting('cursorGlow', this.checked)"></label>
-                    <label class="setting-row"><span>Background effects</span><input id="setBgEffects" type="checkbox" onchange="updateSetting('bgEffects', this.checked)"></label>
-                    <label class="setting-row"><span>Animations</span><input id="setAnimations" type="checkbox" onchange="updateSetting('animations', this.checked)"></label>
-                    <label class="setting-row"><span>Card density</span>
-                        <select id="setDensity" class="tier-select" onchange="updateSetting('density', this.value)">
-                            <option value="comfortable">Comfortable</option>
-                            <option value="compact">Compact</option>
-                        </select>
-                    </label>
-                </div>
+// STATIC
+app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
+app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js")));
+app.get("/logo.png",  (req, res) => res.sendFile(path.join(__dirname, "logo.png")));
+app.get("/api/ping",  (req, res) => res.json({ ok: true }));
+app.get("/api/csrf",  (req, res) => res.json({ ok: true, token: ensureCsrfToken(req) }));
 
-                <div class="settings-panel">
-                    <h3>Games</h3>
-                    <label class="setting-row"><span>Auto refresh</span><input id="setAutoRefresh" type="checkbox" onchange="updateSetting('autoRefresh', this.checked)"></label>
-                    <label class="setting-row"><span>Refresh interval</span>
-                        <select id="setRefreshInterval" class="tier-select" onchange="updateSetting('refreshInterval', Number(this.value))">
-                            <option value="3000">3 seconds</option>
-                            <option value="5000">5 seconds</option>
-                            <option value="10000">10 seconds</option>
-                            <option value="30000">30 seconds</option>
-                            <option value="60000">1 minute</option>
-                        </select>
-                    </label>
-                    <label class="setting-row"><span>Sort games by</span>
-                        <select id="setSort" class="tier-select" onchange="updateSetting('sort', this.value)">
-                            <option value="players-asc">Fewest players</option>
-                            <option value="players-desc">Most players</option>
-                            <option value="name-asc">Name A–Z</option>
-                            <option value="name-desc">Name Z–A</option>
-                        </select>
-                    </label>
-                    <label class="setting-row"><span>Hide empty servers</span><input id="setHideEmpty" type="checkbox" onchange="updateSetting('hideEmpty', this.checked)"></label>
-                    <label class="setting-row"><span>Favorites first</span><input id="setFavoritesFirst" type="checkbox" onchange="updateSetting('favoritesFirst', this.checked)"></label>
-                </div>
+// DESTRUCTIVE: wipes every account. Owner session + CSRF + explicit confirmation
+// phrase required, and it is a POST so it cannot be triggered by visiting a URL.
+app.post("/api/reset-users", requireOwner, requireCsrf, async (req, res) => {
+    if (req.body.confirm !== "DELETE ALL USERS") {
+        return res.json({ ok: false, error: 'Send { "confirm": "DELETE ALL USERS" } to proceed.' });
+    }
+    const result = await User.deleteMany({});
+    console.warn(`All users wiped by ${req.session.username} (${result.deletedCount} removed).`);
+    res.json({ ok: true, message: `Wiped ${result.deletedCount} user(s).` });
+});
 
-                <div class="settings-panel">
-                    <h3>Data</h3>
-                    <p class="tab-sub">Settings and favorites live in this browser's local storage. Clearing them will not touch your account.</p>
-                    <p id="settingsStatus" class="form-status hidden"></p>
-                    <div class="quick-actions">
-                        <button class="btn-ghost" onclick="clearFavorites()">Clear Favorites</button>
-                        <button class="btn-ghost" onclick="resetSettings()">Reset Settings</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+// SIGNUP
+app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const { email, username, password, dob } = req.body;
+        const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
+        const validationError = validateSignup({ email, username, password, dob, robloxUsername });
+        if (validationError) return res.json({ ok: false, error: validationError });
 
-        <div id="tab-upgrade" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Upgrade Your Tier</h2>
-                <p class="tab-sub">Purchase a tier to unlock more games. DM <strong>#dr.muffinn</strong> on Discord or open a ticket after purchasing.</p>
-            </div>
-            <div class="tiers-grid">
-                <div class="tier-card"><div class="tier-icon">BR</div><div class="tier-name">Bronze</div><div class="tier-price">100 <span>R$</span></div><div class="tier-desc">Games with under 10 active players</div></div>
-                <div class="tier-card"><div class="tier-icon">SI</div><div class="tier-name">Silver</div><div class="tier-price">200 <span>R$</span></div><div class="tier-desc">Games with under 80 active players</div></div>
-                <div class="tier-card"><div class="tier-icon">GO</div><div class="tier-name">Gold</div><div class="tier-price">250 <span>R$</span></div><div class="tier-desc">Games with under 100 active players</div></div>
-                <div class="tier-card"><div class="tier-icon">DI</div><div class="tier-name">Diamond</div><div class="tier-price">350 <span>R$</span></div><div class="tier-desc">Games with under 150 active players</div></div>
-                <div class="tier-card"><div class="tier-icon">PL</div><div class="tier-name">Platinum</div><div class="tier-price">800 <span>R$</span></div><div class="tier-desc">Games with under 500 active players</div></div>
-                <div class="tier-card"><div class="tier-icon">EA</div><div class="tier-name">Early Access</div><div class="tier-price">1,200 <span>R$</span></div><div class="tier-desc">Early Access games only</div></div>
-                <div class="tier-card"><div class="tier-icon">EL</div><div class="tier-name">Elite</div><div class="tier-price">1,800 <span>R$</span></div><div class="tier-desc">Games with under 1,000 active players</div></div>
-                <div class="tier-card best-tier"><div class="tier-badge-best">BEST VALUE</div><div class="tier-icon">AB</div><div class="tier-name">Absolute</div><div class="tier-price">2,500 <span>R$</span></div><div class="tier-desc">All games. No restrictions. Highest tier.</div></div>
-            </div>
-            <div class="upgrade-cta">
-                <p>To purchase, DM <strong>#dr.muffinn</strong> on Discord or open a support ticket.</p>
-            </div>
-        </div>
+        const cleanEmail    = String(email).trim().toLowerCase();
+        const cleanUsername = String(username).trim();
 
-        <div id="tab-profile" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Profile</h2>
-                <p class="tab-sub">Your Vantix account details.</p>
-            </div>
-            <div class="profile-panel">
-                <img src="https://cdn.discordapp.com/attachments/1524130087803551825/1524130503316475934/IMG_1516.png?ex=6a5a7e24&is=6a592ca4&hm=d85da338f7c87582bb40c42b30022c8de2a77107801d9ae3bc8bd018359e7d2a" alt="Vantix" onerror="this.classList.add('logo-missing')">
-                <div>
-                    <h3 id="profileUsername">User</h3>
-                    <p id="profileTier">No Tier</p>
-                    <div class="quick-actions">
-                        <button class="btn-primary" onclick="switchTab('tracking')">Manage Tracking</button>
-                        <button class="btn-ghost" onclick="switchTab('security')">Security</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        const existingUser  = await User.findOne({ username: cleanUsername });
+        const existingEmail = await User.findOne({ email: cleanEmail });
+        if (existingUser)  return res.json({ ok: false, error: "Username already taken" });
+        if (existingEmail) return res.json({ ok: false, error: "Email already in use" });
 
-        <div id="tab-help" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Help</h2>
-                <p class="tab-sub">Common questions about tiers, tracking, and verification.</p>
-            </div>
-            <div class="faq-list">
-                <details class="faq" open>
-                    <summary>Why can't I see any games?</summary>
-                    <p>Your tier decides which servers appear. Bronze shows servers under 10 players, Absolute shows everything. If you have no tier yet, open the Upgrade tab.</p>
-                </details>
-                <details class="faq">
-                    <summary>How does the in-game panel work?</summary>
-                    <p>Bind your Roblox username under Tracking. When you join a whitelisted server, Vantix recognises you and your panel loads automatically inside the game.</p>
-                </details>
-                <details class="faq">
-                    <summary>How does Roblox verification work?</summary>
-                    <p>Vantix gives you a code like <strong>VANTIX-4F2A9C</strong>. Paste it anywhere in your Roblox profile's About section, save it on Roblox, then press Verify. We read your public profile to confirm the code is there, which proves the account is yours. You can delete the code afterwards.</p>
-                </details>
-                <details class="faq">
-                    <summary>Verify says the code isn't in my profile.</summary>
-                    <p>Make sure you saved the change on Roblox, and that you edited the <strong>About</strong> section on your profile rather than your status. Roblox can take a few seconds to update. If it still fails, generate a new code and try again.</p>
-                </details>
-                <details class="faq">
-                    <summary>I forgot my password.</summary>
-                    <p>Use "Forgot password?" on the login screen. You'll prove ownership with the same Roblox profile code, then set a new password. No email needed.</p>
-                </details>
-                <details class="faq">
-                    <summary>Are my favorites synced across devices?</summary>
-                    <p>No. Favorites and settings are stored in your browser's local storage, so each device keeps its own list.</p>
-                </details>
-                <details class="faq">
-                    <summary>How do I upgrade my tier?</summary>
-                    <p>DM <strong>#dr.muffinn</strong> on Discord or open a support ticket after purchasing. Tiers are applied manually from the owner panel.</p>
-                </details>
-            </div>
-        </div>
+        let profile = null;
+        try {
+            profile = await robloxLookup(robloxUsername);
+        } catch (e) {
+            console.error("Roblox lookup failed:", e.message);
+            return res.json({ ok: false, error: "Could not reach Roblox right now. Try again in a moment." });
+        }
+        if (!profile) return res.json({ ok: false, error: `No Roblox user named "${robloxUsername}" exists` });
 
-        <div id="tab-owner" class="tab-content hidden">
-            <div class="tab-header">
-                <h2>Owner Panel</h2>
-                <p class="tab-sub">Manage user tiers</p>
-            </div>
-            <div class="owner-search-row">
-                <div class="search-wrap">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input id="ownerSearch" placeholder="Search users..." class="search-inp" oninput="filterOwnerUsers()">
-                </div>
-            </div>
-            <div id="ownerUsersTable"></div>
-        </div>
-    </main>
-</div>
+        const taken = await User.findOne({ robloxUserId: profile.id, robloxVerified: true });
+        if (taken) return res.json({ ok: false, error: "That Roblox account is already linked to a Vantix account" });
 
-<div id="execModal" class="modal-overlay hidden">
-    <div class="modal">
-        <div class="modal-header">
-            <span id="execModalTitle">Script Execution</span>
-            <div class="modal-header-actions">
-                <button onclick="popoutExec()" class="modal-popout" title="Pop out executor">Open</button>
-                <button onclick="closeExecModal()" class="modal-close">Close</button>
-            </div>
-        </div>
-        <div id="execOutput"></div>
-        <div class="modal-input-area">
-            <textarea id="execCode" placeholder="-- Enter Lua code&#10;print('Hello from server!')" rows="4" spellcheck="false"></textarea>
-            <div class="modal-actions">
-                <span class="hint">Ctrl+Enter to run</span>
-                <button id="execRunBtn" onclick="runExec()">Run</button>
-            </div>
-        </div>
-    </div>
-</div>
+        const hash = await bcrypt.hash(password, 10);
+        const user = await User.create({
+            email: cleanEmail,
+            username: cleanUsername,
+            password: hash,
+            dob,
+            tier: "none",
+            robloxUsername: profile.name,
+            robloxUserId: profile.id,
+            robloxVerified: false
+        });
 
-<script src="/app.js"></script>
-</body>
-</html>
+        const code = await issueCode(user, "verify");
+        res.json({
+            ok: true,
+            username: cleanUsername,
+            needsVerification: true,
+            code,
+            robloxUsername: profile.name,
+            robloxDisplayName: profile.displayName,
+            robloxUserId: profile.id,
+            avatar: await robloxAvatar(profile.id)
+        });
+    } catch (e) {
+        console.error("Signup error:", e.message);
+        if (e.code === 11000) {
+            const field = Object.keys(e.keyPattern || {})[0];
+            return res.json({ ok: false, error: field === "username" ? "Username already taken" : "Email already in use" });
+        }
+        res.json({ ok: false, error: "Signup failed: " + e.message });
+    }
+});
+
+// ROBLOX VERIFICATION
+app.get("/api/verify-state", async (req, res) => {
+    try {
+        const username = String(req.query.username || "").trim();
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (user.robloxVerified) return res.json({ ok: true, verified: true });
+        res.json({
+            ok: true,
+            verified: false,
+            code: user.verifyCode || "",
+            robloxUsername: user.robloxUsername || "",
+            robloxUserId: user.robloxUserId || 0,
+            avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : ""
+        });
+    } catch {
+        res.json({ ok: false, error: "Could not load verification state" });
+    }
+});
+
+app.post("/api/verify-roblox", rateLimit("verify", 40, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const username = String(req.body.username || "").trim();
+        if (!username) return res.json({ ok: false, error: "Missing account" });
+
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (user.robloxVerified) return res.json({ ok: false, error: "This account is already verified. Log in normally." });
+
+        const result = await checkProfileCode(user, "verify");
+        if (!result.ok) return res.json({ ok: false, error: result.error });
+
+        user.robloxVerified = true;
+        await user.save();
+
+        req.session.username = user.username;
+        req.session.save(() => res.json({
+            ok: true,
+            username: user.username,
+            tier: user.tier,
+            isOwner: user.username === OWNER,
+            robloxUsername: user.robloxUsername || ""
+        }));
+    } catch (e) {
+        console.error("Verify error:", e.message);
+        res.json({ ok: false, error: "Could not verify that profile" });
+    }
+});
+
+app.post("/api/new-code", rateLimit("newcode", 12, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const username = String(req.body.username || "").trim();
+        const kind = req.body.kind === "reset" ? "reset" : "verify";
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (kind === "verify" && user.robloxVerified) return res.json({ ok: false, error: "This account is already verified" });
+
+        const code = await issueCode(user, kind);
+        res.json({ ok: true, code });
+    } catch {
+        res.json({ ok: false, error: "Could not generate a new code" });
+    }
+});
+
+// PASSWORD RESET (via Roblox profile, no email)
+app.post("/api/forgot-password", rateLimit("forgot", 12, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const username = String(req.body.username || "").trim();
+        if (!username) return res.json({ ok: false, error: "Enter your Vantix username" });
+
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "No account with that username" });
+        if (!user.robloxUserId) {
+            return res.json({ ok: false, error: "This account has no linked Roblox profile, so it cannot be reset this way." });
+        }
+
+        const code = await issueCode(user, "reset");
+        res.json({
+            ok: true,
+            username: user.username,
+            code,
+            robloxUsername: user.robloxUsername || "",
+            avatar: await robloxAvatar(user.robloxUserId)
+        });
+    } catch {
+        res.json({ ok: false, error: "Could not start a password reset" });
+    }
+});
+
+app.post("/api/reset-password", rateLimit("reset", 40, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const username = String(req.body.username || "").trim();
+        const password = String(req.body.password || "");
+        if (!username) return res.json({ ok: false, error: "Missing account" });
+
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+
+        const passwordError = validatePassword(password, user.username, user.email);
+        if (passwordError) return res.json({ ok: false, error: passwordError });
+
+        const result = await checkProfileCode(user, "reset");
+        if (!result.ok) return res.json({ ok: false, error: result.error });
+
+        user.password = await bcrypt.hash(password, 10);
+        user.passwordChangedAt = new Date();
+        // Controlling the profile also proves the link is genuine.
+        user.robloxVerified = true;
+        await user.save();
+
+        res.json({ ok: true, username: user.username });
+    } catch {
+        res.json({ ok: false, error: "Could not reset your password" });
+    }
+});
+
+app.post("/api/change-password", requireLogin, requireCsrf, rateLimit("change-pw", 12, AUTH_LIMIT_WINDOW_MS), async (req, res) => {
+    try {
+        const currentPassword = String(req.body.currentPassword || "");
+        const newPassword     = String(req.body.newPassword || "");
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+
+        const match = await bcrypt.compare(currentPassword, user.password);
+        if (!match) return res.json({ ok: false, error: "Your current password is incorrect" });
+
+        const passwordError = validatePassword(newPassword, user.username, user.email);
+        if (passwordError) return res.json({ ok: false, error: passwordError });
+        if (await bcrypt.compare(newPassword, user.password)) {
+            return res.json({ ok: false, error: "New password must be different from your current one" });
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.passwordChangedAt = new Date();
+        await user.save();
+        res.json({ ok: true });
+    } catch {
+        res.json({ ok: false, error: "Could not change your password" });
+    }
+});
+
+// LOGIN
+app.post("/api/login", rateLimit("login", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.json({ ok: false, error: "All fields required" });
+        const cleanUsername = String(username).trim();
+        if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) return res.json({ ok: false, error: "Invalid username or password" });
+        const user = await User.findOne({ username: cleanUsername });
+        if (!user) return res.json({ ok: false, error: "Invalid username or password" });
+        const match = await bcrypt.compare(password, user.password);
+        if (!match) return res.json({ ok: false, error: "Invalid username or password" });
+
+        if (!user.robloxVerified) {
+            const code = user.verifyCode && user.verifyExpires && Date.now() < new Date(user.verifyExpires).getTime()
+                ? user.verifyCode
+                : await issueCode(user, "verify");
+            return res.json({
+                ok: false,
+                needsVerification: true,
+                username: user.username,
+                code,
+                robloxUsername: user.robloxUsername || "",
+                avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : "",
+                error: "Verify your Roblox profile to continue."
+            });
+        }
+
+        req.session.username = user.username;
+        req.session.save(() => res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" }));
+    } catch (e) {
+        console.error("Login error:", e.message);
+        res.json({ ok: false, error: "Login failed: " + e.message });
+    }
+});
+
+// LOGOUT
+app.post("/api/logout", requireCsrf, (req, res) => req.session.destroy(() => res.json({ ok: true })));
+
+// ME
+app.get("/api/me", async (req, res) => {
+    if (!req.session.username) return res.json({ ok: false });
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false });
+        res.json({
+            ok: true,
+            username: user.username,
+            tier: user.tier,
+            isOwner: user.username === OWNER,
+            robloxUsername: user.robloxUsername || ""
+        });
+    } catch { res.json({ ok: false }); }
+});
+
+// ACCOUNT (Security tab)
+app.get("/api/account", requireLogin, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({
+            ok: true,
+            username: user.username,
+            email: user.email,
+            robloxVerified: !!user.robloxVerified,
+            robloxUsername: user.robloxUsername || "",
+            robloxUserId: user.robloxUserId || 0,
+            avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : "",
+            tier: user.tier,
+            joinedAt: user.joinedAt,
+            passwordChangedAt: user.passwordChangedAt || null
+        });
+    } catch { res.json({ ok: false, error: "Could not load your account" }); }
+});
+
+// TRACKING
+app.get("/api/tracking", requireLogin, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        const status = user.robloxUsername
+            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
+            : null;
+        res.json(trackingPayload(user, status));
+    } catch {
+        res.json({ ok: false, error: "Could not load tracking settings" });
+    }
+});
+
+app.post("/api/tracking", requireLogin, requireCsrf, async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
+        if (robloxUsername && !/^[A-Za-z0-9_]{3,20}$/.test(robloxUsername))
+            return res.json({ ok: false, error: "Enter a valid Roblox username" });
+        const user = await User.findOneAndUpdate(
+            { username: req.session.username },
+            { robloxUsername },
+            { new: true }
+        );
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        const status = user.robloxUsername
+            ? await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + user.robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i") })
+            : null;
+        res.json(trackingPayload(user, status));
+    } catch {
+        res.json({ ok: false, error: "Could not save tracking settings" });
+    }
+});
+
+// GAMES
+app.get("/api/games", requireLogin, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        res.json(await gamesForTier(user.tier));
+    } catch { res.json([]); }
+});
+
+// JOIN TOKEN
+app.post("/api/join", requireLogin, requireCsrf, async (req, res) => {
+    try {
+        const { placeId } = req.body;
+        if (!placeId) return res.json({ ok: false });
+        const user    = await User.findOne({ username: req.session.username });
+        const allowed = await gamesForTier(user.tier);
+        if (!allowed.find(g => g.placeId === placeId))
+            return res.json({ ok: false, error: "Your tier does not include this game" });
+        const token = uuidv4();
+        await Token.create({ token, username: user.username, placeId });
+        res.json({ ok: true, token, placeId });
+    } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ROBLOX UPDATE
+app.post("/api/update", async (req, res) => {
+    try {
+        const { placeId, players, name, creator, earlyAccess } = req.body;
+        if (!placeId) return res.json({ ok: false });
+        let icon = "";
+        try {
+            const r = await fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeId}&size=512x512&format=Png`);
+            const d = await r.json();
+            icon = d?.data?.[0]?.imageUrl || "";
+        } catch {}
+        await Game.findOneAndUpdate(
+            { placeId },
+            { placeId, players: Number(players) || 0, name: name || "Unknown", creator: creator || "Unknown", icon, earlyAccess: earlyAccess === true || earlyAccess === "true", updated: new Date() },
+            { upsert: true, new: true }
+        );
+        res.json({ ok: true });
+    } catch (e) { res.json({ ok: false }); }
+});
+
+// VALIDATE TOKEN
+app.post("/api/validate-token", async (req, res) => {
+    try {
+        const { token, placeId } = req.body;
+        if (!token || !placeId) return res.json({ ok: false });
+        const t = await Token.findOne({ token, placeId, used: false });
+        if (!t) return res.json({ ok: false });
+        t.used = true;
+        await t.save();
+        res.json({ ok: true, username: t.username });
+    } catch { res.json({ ok: false }); }
+});
+
+app.post("/api/check-player", async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.username);
+        if (!robloxUsername) return res.json({ ok: false });
+        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const user = await User.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
+        res.json({ ok: !!user });
+    } catch {
+        res.json({ ok: false });
+    }
+});
+
+app.post("/api/player-status", async (req, res) => {
+    try {
+        const robloxUsername = cleanRobloxUsername(req.body.username);
+        if (!robloxUsername) return res.json({ ok: false });
+        await PlayerStatus.findOneAndUpdate(
+            { robloxUsername },
+            {
+                robloxUsername,
+                displayName: req.body.displayName || "",
+                userId: Number(req.body.userId) || 0,
+                placeId: String(req.body.placeId || ""),
+                jobId: String(req.body.jobId || ""),
+                gameName: String(req.body.gameName || ""),
+                online: req.body.online === true || req.body.online === "true",
+                lastSeen: new Date()
+            },
+            { upsert: true, new: true }
+        );
+        res.json({ ok: true });
+    } catch {
+        res.json({ ok: false });
+    }
+});
+
+// EXECUTE
+app.post("/api/execute", requireLogin, requireCsrf, async (req, res) => {
+    try {
+        const { placeId, code } = req.body;
+        if (!placeId || !String(code || "").trim()) return res.json({ ok: false, error: "Missing script" });
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        const allowed = await gamesForTier(user.tier);
+        if (!allowed.find(g => String(g.placeId) === String(placeId)))
+            return res.json({ ok: false, error: "Your tier does not include this game" });
+
+        const robloxUsername = cleanRobloxUsername(user.robloxUsername);
+        if (!robloxUsername) return res.json({ ok: false, error: "Set your Roblox username in the Tracking tab first" });
+
+        const escaped = robloxUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const status = await PlayerStatus.findOne({ robloxUsername: new RegExp("^" + escaped + "$", "i") });
+        const fresh = status?.lastSeen && Date.now() - new Date(status.lastSeen).getTime() < 30000;
+        if (!status?.online || !fresh)
+            return res.json({ ok: false, error: `${robloxUsername} is not online in a connected game right now` });
+        if (String(status.placeId) !== String(placeId))
+            return res.json({ ok: false, error: `${robloxUsername} is online, but not in this game` });
+        if (!status.jobId)
+            return res.json({ ok: false, error: "Tracked server has not reported a JobId yet" });
+
+        const id = uuidv4();
+        await Command.create({
+            id,
+            placeId,
+            jobId: status.jobId,
+            targetUsername: robloxUsername,
+            code,
+            status: "pending",
+            requestedBy: req.session.username
+        });
+        res.json({ ok: true, id });
+    } catch (e) {
+        res.json({ ok: false, error: "Could not send execute command" });
+    }
+});
+
+app.get("/api/poll", async (req, res) => {
+    try {
+        const { placeId, jobId } = req.query;
+        if (!placeId) return res.json({ commands: [] });
+        const query = { placeId, status: "pending" };
+        if (jobId) {
+            query.$or = [{ jobId: String(jobId) }, { jobId: { $exists: false } }, { jobId: "" }];
+        }
+        const cmds = await Command.find(query);
+        await Command.updateMany({ _id: { $in: cmds.map(c => c._id) } }, { status: "sent" });
+        res.json({ commands: cmds.map(c => ({ id: c.id, action: c.action || "execute", code: c.code, targetUsername: c.targetUsername })) });
+    } catch { res.json({ commands: [] }); }
+});
+
+app.post("/api/result", async (req, res) => {
+    try {
+        const { placeId, id, output } = req.body;
+        if (!placeId || !id) return res.json({ ok: false });
+        await Command.findOneAndUpdate({ id, placeId }, { status: "done", output: output || "(no output)" });
+        res.json({ ok: true });
+    } catch { res.json({ ok: false }); }
+});
+
+app.get("/api/result", requireLogin, async (req, res) => {
+    try {
+        const { placeId, id } = req.query;
+        if (!placeId || !id) return res.json({ status: "unknown" });
+        const cmd = await Command.findOne({ id, placeId });
+        if (!cmd) return res.json({ status: "unknown" });
+        res.json({ status: cmd.status, output: cmd.output });
+    } catch { res.json({ status: "unknown" }); }
+});
+
+// OWNER
+app.get("/api/owner/users", requireOwner, async (req, res) => {
+    try {
+        const list = await User.find({}, { password: 0 });
+        res.json(list.map(u => ({
+            username: u.username,
+            email: u.email,
+            tier: u.tier,
+            joinedAt: u.joinedAt,
+            robloxUsername: u.robloxUsername || "",
+            emailVerified: !!u.robloxVerified
+        })));
+    } catch { res.json([]); }
+});
+
+app.post("/api/owner/set-tier", requireOwner, requireCsrf, async (req, res) => {
+    try {
+        const { username, tier } = req.body;
+        if (!TIERS[tier]) return res.json({ ok: false, error: "Invalid tier" });
+        const user = await User.findOneAndUpdate({ username }, { tier });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({ ok: true });
+    } catch { res.json({ ok: false }); }
+});
+
+// START SERVER
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+});
