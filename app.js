@@ -16,7 +16,7 @@ let trackingTimer = null;
 let csrfToken = "";
 
 let pendingVerifyUsername = "";
-let pendingResetEmail     = "";
+let pendingResetUsername  = "";
 let accountData           = null;
 let favorites             = [];
 let settings              = {};
@@ -237,13 +237,20 @@ async function doSignup() {
     const username = document.getElementById("su-username").value.trim();
     const password = document.getElementById("su-password").value;
     const dob      = document.getElementById("su-dob").value;
+    const robloxUsername = document.getElementById("su-roblox").value.trim().replace(/^@/, "");
 
-    const res = await postJson("/api/signup", { email, username, password, dob });
+    const btn = document.getElementById("signupBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Checking Roblox..."; }
+
+    const res = await postJson("/api/signup", { email, username, password, dob, robloxUsername });
     const data = await res.json();
+
+    if (btn) { btn.disabled = false; btn.textContent = "Create Account"; }
+
     if (data.ok) {
         showError("signupError", "");
         pendingVerifyUsername = data.username;
-        openVerifyPage(data, email);
+        openVerifyPage(data);
     } else {
         showError("signupError", data.error);
     }
@@ -264,7 +271,7 @@ async function doLogin() {
     if (data.needsVerification) {
         showError("loginError", "");
         pendingVerifyUsername = data.username;
-        openVerifyPage(data, "");
+        openVerifyPage(data);
         return;
     }
     showError("loginError", data.error);
@@ -292,68 +299,82 @@ async function checkSession() {
     }
 }
 
-// ─── EMAIL VERIFICATION ───────────────────────────────────────────────────────
-function openVerifyPage(data, email) {
-    const target = email || data.email || "your email address";
-    const label = document.getElementById("verifyTarget");
-    if (label) label.textContent = target;
-    document.getElementById("vf-code").value = "";
-    showError("verifyError", "");
-
-    if (data.devCode) {
-        setFormStatus("verifyStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
-    } else if (data.mailSent) {
-        setFormStatus("verifyStatus", "We sent a 6-digit code to your inbox. It expires in 15 minutes.", "ok");
-    } else {
-        setFormStatus("verifyStatus", "Could not send the email. Use Resend to try again.", "error");
+// ─── ROBLOX PROFILE VERIFICATION ──────────────────────────────────────────────
+function fillProfileCard(prefix, data) {
+    const codeEl = document.getElementById(prefix + "Code");
+    if (codeEl) codeEl.textContent = data.code || "";
+    const nameEl = document.getElementById(prefix + "Roblox");
+    if (nameEl) nameEl.textContent = data.robloxUsername || "your Roblox account";
+    const avatarEl = document.getElementById(prefix + "Avatar");
+    if (avatarEl) {
+        if (data.avatar) {
+            avatarEl.src = data.avatar;
+            avatarEl.classList.remove("hidden");
+        } else {
+            avatarEl.classList.add("hidden");
+        }
     }
-
-    showPage("verifyPage");
-    setTimeout(() => document.getElementById("vf-code").focus(), 60);
 }
 
-async function doVerifyEmail() {
-    const code = document.getElementById("vf-code").value.trim();
-    if (!pendingVerifyUsername) return showError("verifyError", "Start from the login page.");
-    if (!code) return showError("verifyError", "Enter the 6-digit code");
+function copyCode(elementId, statusId) {
+    const text = document.getElementById(elementId)?.textContent || "";
+    if (!text) return;
+    navigator.clipboard?.writeText(text).then(
+        () => setFormStatus(statusId, "Code copied. Paste it into your Roblox About section.", "ok"),
+        () => setFormStatus(statusId, "Could not copy automatically — select the code and copy it.", "error")
+    );
+}
 
-    const res  = await postJson("/api/verify-email", { username: pendingVerifyUsername, code });
-    const data = await res.json();
-    if (!data.ok) return showError("verifyError", data.error || "Could not verify that code");
-
+function openVerifyPage(data) {
+    pendingVerifyUsername = data.username || pendingVerifyUsername;
+    fillProfileCard("verify", data);
     showError("verifyError", "");
+    setFormStatus("verifyStatus", "", "");
+    showPage("verifyPage");
+}
+
+async function doVerifyRoblox() {
+    if (!pendingVerifyUsername) return showError("verifyError", "Start from the login page.");
+
+    const btn = document.getElementById("verifyBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Checking your profile..."; }
+    showError("verifyError", "");
+
+    const res  = await postJson("/api/verify-roblox", { username: pendingVerifyUsername });
+    const data = await res.json();
+
+    if (btn) { btn.disabled = false; btn.textContent = "I've added it — Verify"; }
+
+    if (!data.ok) return showError("verifyError", data.error || "Could not verify your profile");
+
     pendingVerifyUsername = "";
     currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
     enterApp();
 }
 
-async function resendVerification() {
+async function newVerifyCode() {
     if (!pendingVerifyUsername) return;
-    setFormStatus("verifyStatus", "Sending a new code...", "");
-    const res  = await postJson("/api/resend-verification", { username: pendingVerifyUsername });
+    const res  = await postJson("/api/new-code", { username: pendingVerifyUsername, kind: "verify" });
     const data = await res.json();
-    if (!data.ok) return setFormStatus("verifyStatus", data.error || "Could not resend the code", "error");
-    if (data.devCode) {
-        setFormStatus("verifyStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
-    } else {
-        setFormStatus("verifyStatus", "A new code is on its way.", "ok");
-    }
+    if (!data.ok) return setFormStatus("verifyStatus", data.error || "Could not generate a new code", "error");
+    document.getElementById("verifyCode").textContent = data.code;
+    setFormStatus("verifyStatus", "New code generated. Paste this one instead.", "ok");
 }
 
 // ─── PASSWORD RESET ───────────────────────────────────────────────────────────
 function openForgotPage() {
-    document.getElementById("fp-email").value = "";
+    document.getElementById("fp-username").value = "";
     showError("forgotError", "");
     setFormStatus("forgotStatus", "", "");
     showPage("forgotPage");
 }
 
 async function doForgotPassword() {
-    const email = document.getElementById("fp-email").value.trim();
-    if (!email) return showError("forgotError", "Enter your email address");
+    const username = document.getElementById("fp-username").value.trim();
+    if (!username) return showError("forgotError", "Enter your Vantix username");
 
-    setFormStatus("forgotStatus", "Sending...", "");
-    const res  = await postJson("/api/forgot-password", { email });
+    setFormStatus("forgotStatus", "Looking up your account...", "");
+    const res  = await postJson("/api/forgot-password", { username });
     const data = await res.json();
     if (!data.ok) {
         setFormStatus("forgotStatus", "", "");
@@ -361,40 +382,45 @@ async function doForgotPassword() {
     }
 
     showError("forgotError", "");
-    pendingResetEmail = email;
-    document.getElementById("rp-code").value = "";
-    document.getElementById("rp-password").value = "";
-    const label = document.getElementById("resetTarget");
-    if (label) label.textContent = email;
-
-    if (data.devCode) {
-        setFormStatus("resetStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
-    } else {
-        setFormStatus("resetStatus", "If that email has an account, a reset code is on the way.", "ok");
-    }
     showError("resetError", "");
+    setFormStatus("resetStatus", "", "");
+    pendingResetUsername = data.username;
+    document.getElementById("rp-password").value = "";
+    fillProfileCard("reset", data);
     showPage("resetPage");
-    setTimeout(() => document.getElementById("rp-code").focus(), 60);
 }
 
 async function doResetPassword() {
-    const code     = document.getElementById("rp-code").value.trim();
     const password = document.getElementById("rp-password").value;
-    if (!pendingResetEmail) return showError("resetError", "Start the reset from the login page.");
-    if (!code)     return showError("resetError", "Enter the code from your email");
+    if (!pendingResetUsername) return showError("resetError", "Start the reset from the login page.");
     if (!password) return showError("resetError", "Choose a new password");
 
-    const res  = await postJson("/api/reset-password", { email: pendingResetEmail, code, password });
+    const btn = document.getElementById("resetBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Checking your profile..."; }
+
+    const res  = await postJson("/api/reset-password", { username: pendingResetUsername, password });
     const data = await res.json();
+
+    if (btn) { btn.disabled = false; btn.textContent = "Verify & Set Password"; }
+
     if (!data.ok) return showError("resetError", data.error || "Could not reset your password");
 
     showError("resetError", "");
-    pendingResetEmail = "";
-    document.getElementById("li-username").value = data.username || "";
+    document.getElementById("li-username").value = pendingResetUsername;
     document.getElementById("li-password").value = "";
+    pendingResetUsername = "";
     showError("loginError", "");
     setFormStatus("loginNotice", "Password updated. Log in with your new password.", "ok");
     showPage("loginPage");
+}
+
+async function newResetCode() {
+    if (!pendingResetUsername) return;
+    const res  = await postJson("/api/new-code", { username: pendingResetUsername, kind: "reset" });
+    const data = await res.json();
+    if (!data.ok) return setFormStatus("resetStatus", data.error || "Could not generate a new code", "error");
+    document.getElementById("resetCode").textContent = data.code;
+    setFormStatus("resetStatus", "New code generated. Paste this one instead.", "ok");
 }
 
 async function doChangePassword() {
@@ -473,7 +499,8 @@ function renderAccount(data) {
         ["Username", escapeHtml(data.username)],
         ["Email", escapeHtml(data.email || "—")],
         ["Tier", escapeHtml(TIER_LABELS[data.tier] || data.tier || "No Tier")],
-        ["Roblox username", escapeHtml(data.robloxUsername || "Not set")],
+        ["Roblox account", escapeHtml(data.robloxUsername || "Not linked")],
+        ["Roblox user ID", escapeHtml(data.robloxUserId ? String(data.robloxUserId) : "—")],
         ["Member since", escapeHtml(relativeDate(data.joinedAt))],
         ["Password last changed", escapeHtml(data.passwordChangedAt ? relativeDate(data.passwordChangedAt) : "Never")]
     ];
@@ -486,12 +513,17 @@ function renderAccount(data) {
 
     const badge = document.getElementById("verifyBadge");
     if (badge) {
-        badge.className = "verify-badge " + (data.emailVerified ? "verified" : "unverified");
-        badge.textContent = data.emailVerified ? "Email verified" : "Email not verified";
+        badge.className = "verify-badge " + (data.robloxVerified ? "verified" : "unverified");
+        badge.textContent = data.robloxVerified ? "Roblox profile verified" : "Roblox profile not verified";
     }
-    const mailNote = document.getElementById("mailConfigNote");
-    if (mailNote) {
-        mailNote.classList.toggle("hidden", !!data.mailEnabled);
+    const avatar = document.getElementById("accountAvatarImg");
+    if (avatar) {
+        if (data.avatar) {
+            avatar.src = data.avatar;
+            avatar.classList.remove("hidden");
+        } else {
+            avatar.classList.add("hidden");
+        }
     }
 }
 
@@ -761,8 +793,10 @@ window.popoutExec = popoutExec;
 window.runExec = runExec;
 window.toggleCursorGlow = toggleCursorGlow;
 window.toggleGamesRefresh = toggleGamesRefresh;
-window.doVerifyEmail = doVerifyEmail;
-window.resendVerification = resendVerification;
+window.doVerifyRoblox = doVerifyRoblox;
+window.newVerifyCode = newVerifyCode;
+window.newResetCode = newResetCode;
+window.copyCode = copyCode;
 window.openForgotPage = openForgotPage;
 window.doForgotPassword = doForgotPassword;
 window.doResetPassword = doResetPassword;
@@ -1002,9 +1036,8 @@ document.addEventListener("keydown", e => {
     if (e.key === "Enter") {
         const active = document.activeElement;
         if (!active) return;
-        if (active.id === "vf-code") doVerifyEmail();
-        if (active.id === "fp-email") doForgotPassword();
-        if (active.id === "rp-code" || active.id === "rp-password") doResetPassword();
+        if (active.id === "fp-username") doForgotPassword();
+        if (active.id === "rp-password") doResetPassword();
         if (active.id === "li-username" || active.id === "li-password") doLogin();
     }
 });
