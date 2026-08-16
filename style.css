@@ -1402,6 +1402,90 @@ body {
 }
 .code-inp::placeholder { letter-spacing: 12px; color: rgba(230,244,236,0.16); }
 
+/* ═══ ROBLOX PROFILE VERIFICATION ═══ */
+.profile-head { display: flex; align-items: center; gap: 16px; }
+.profile-head h2 { font-size: 22px; line-height: 1.25; margin-bottom: 5px; }
+/* .auth-sub carries a negative top margin for stacked forms; cancel it here. */
+.profile-head .auth-sub { margin-top: 0; margin-bottom: 0; }
+.roblox-avatar {
+    width: 60px; height: 60px; flex: none;
+    border-radius: 14px;
+    object-fit: cover;
+    border: 1px solid var(--line-2);
+    background: rgba(var(--accent-rgb),0.06);
+}
+.account-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+.account-head .roblox-avatar { width: 46px; height: 46px; border-radius: 12px; }
+.account-head .verify-badge { margin-top: 0; }
+
+.steps { list-style: none; display: grid; gap: 10px; margin: 4px 0 2px; }
+.steps li { display: flex; align-items: flex-start; gap: 11px; }
+.steps li p {
+    flex: 1;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-2);
+}
+.steps li b { color: var(--text); font-weight: 600; }
+.steps li span {
+    width: 21px; height: 21px; flex: none;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: rgba(var(--accent-rgb),0.1);
+    border: 1px solid var(--line-2);
+    color: var(--green);
+    font: 700 10.5px 'Space Mono', monospace;
+    margin-top: 1px;
+}
+
+.code-box {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 14px 14px 18px;
+    border-radius: var(--r);
+    background: rgba(var(--accent-rgb),0.06);
+    border: 1px dashed var(--line-hot);
+}
+.code-box code {
+    flex: 1;
+    font-family: 'Space Mono', monospace;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--green);
+    user-select: all;
+    overflow-wrap: anywhere;
+}
+.code-copy {
+    flex: none;
+    background: rgba(var(--accent-rgb),0.12);
+    border: 1px solid var(--line-2);
+    color: var(--green);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s var(--ease);
+}
+.code-copy:hover { background: rgba(var(--accent-rgb),0.2); border-color: var(--line-hot); }
+.code-copy:active { transform: scale(0.96); }
+
+.ext-link {
+    display: inline-block;
+    font-size: 12.5px;
+    color: var(--green);
+    text-decoration: none;
+    transition: .2s;
+}
+.ext-link:hover { text-decoration: underline; }
+
+.field-hint {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .field-link { font-size: 11.5px; color: var(--green); cursor: pointer; text-decoration: none; transition: .2s; }
 .field-link:hover { text-decoration: underline; }
