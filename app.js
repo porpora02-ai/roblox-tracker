@@ -15,6 +15,12 @@ let gamesTimer   = null;
 let trackingTimer = null;
 let csrfToken = "";
 
+let pendingVerifyUsername = "";
+let pendingResetEmail     = "";
+let accountData           = null;
+let favorites             = [];
+let settings              = {};
+
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, ch => ({
         "&": "&amp;",
@@ -64,6 +70,140 @@ async function postJson(url, body) {
     return res;
 }
 
+// ─── SETTINGS (device-local) ──────────────────────────────────────────────────
+const SETTINGS_KEY  = "vantix.settings";
+const FAVORITES_KEY = "vantix.favorites";
+
+const DEFAULT_SETTINGS = {
+    cursorGlow: true,
+    bgEffects: true,
+    animations: true,
+    accent: "green",
+    density: "comfortable",
+    autoRefresh: true,
+    refreshInterval: 5000,
+    sort: "players-asc",
+    hideEmpty: false,
+    favoritesFirst: true
+};
+
+function loadSettings() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        settings = { ...DEFAULT_SETTINGS, ...raw };
+    } catch {
+        settings = { ...DEFAULT_SETTINGS };
+    }
+    try {
+        favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+        if (!Array.isArray(favorites)) favorites = [];
+    } catch {
+        favorites = [];
+    }
+}
+
+function persistSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+}
+
+function persistFavorites() {
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch {}
+}
+
+function applySettings() {
+    const root = document.documentElement;
+    root.setAttribute("data-accent", settings.accent || "green");
+    root.setAttribute("data-density", settings.density || "comfortable");
+    root.classList.toggle("no-animations", !settings.animations);
+    root.classList.toggle("no-bg-effects", !settings.bgEffects);
+    toggleCursorGlow(settings.cursorGlow);
+}
+
+function syncSettingsControls() {
+    const set = (id, prop, value) => {
+        const el = document.getElementById(id);
+        if (el) el[prop] = value;
+    };
+    set("setCursorGlow", "checked", settings.cursorGlow);
+    set("setBgEffects", "checked", settings.bgEffects);
+    set("setAnimations", "checked", settings.animations);
+    set("setAutoRefresh", "checked", settings.autoRefresh);
+    set("setHideEmpty", "checked", settings.hideEmpty);
+    set("setFavoritesFirst", "checked", settings.favoritesFirst);
+    set("setRefreshInterval", "value", String(settings.refreshInterval));
+    set("setSort", "value", settings.sort);
+    set("setDensity", "value", settings.density);
+    document.querySelectorAll(".accent-swatch").forEach(el => {
+        el.classList.toggle("active", el.dataset.accent === settings.accent);
+    });
+}
+
+function updateSetting(key, value) {
+    settings[key] = value;
+    persistSettings();
+    applySettings();
+
+    if (key === "autoRefresh" || key === "refreshInterval") {
+        restartGamesTimer();
+    }
+    if (key === "sort" || key === "hideEmpty" || key === "favoritesFirst" || key === "density") {
+        renderGames();
+        renderFavorites();
+    }
+    if (key === "cursorGlow") toggleCursorGlow(value);
+}
+
+function restartGamesTimer() {
+    if (gamesTimer) clearInterval(gamesTimer);
+    gamesTimer = settings.autoRefresh
+        ? setInterval(loadGames, Number(settings.refreshInterval) || 5000)
+        : null;
+}
+
+function resetSettings() {
+    settings = { ...DEFAULT_SETTINGS };
+    persistSettings();
+    applySettings();
+    syncSettingsControls();
+    restartGamesTimer();
+    renderGames();
+    renderFavorites();
+    setFormStatus("settingsStatus", "Settings restored to defaults.", "ok");
+}
+
+function clearFavorites() {
+    favorites = [];
+    persistFavorites();
+    renderGames();
+    renderFavorites();
+    setFormStatus("settingsStatus", "Favorites cleared.", "ok");
+}
+
+// ─── SMALL UI HELPERS ─────────────────────────────────────────────────────────
+function setFormStatus(id, message, kind) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message || "";
+    el.classList.remove("ok", "error", "hidden");
+    if (!message) { el.classList.add("hidden"); return; }
+    if (kind) el.classList.add(kind);
+}
+
+function showError(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!message) { el.classList.add("hidden"); el.textContent = ""; return; }
+    el.textContent = message;
+    el.classList.remove("hidden");
+}
+
+function relativeDate(value) {
+    if (!value) return "Unknown";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "Unknown";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 // ─── PAGE ROUTING ─────────────────────────────────────────────────────────────
 function showPage(id) {
     document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
@@ -81,6 +221,10 @@ function switchTab(tab) {
     });
     if (tab === "owner") loadOwnerUsers();
     if (tab === "tracking") loadTracking();
+    if (tab === "security") loadAccount();
+    if (tab === "favorites") renderFavorites();
+    if (tab === "stats") renderStats();
+    if (tab === "settings") syncSettingsControls();
 }
 
 function isOwnerAccount() {
@@ -93,42 +237,44 @@ async function doSignup() {
     const username = document.getElementById("su-username").value.trim();
     const password = document.getElementById("su-password").value;
     const dob      = document.getElementById("su-dob").value;
-    const errEl    = document.getElementById("signupError");
 
     const res = await postJson("/api/signup", { email, username, password, dob });
     const data = await res.json();
     if (data.ok) {
-        alert("Account created successfully. Please log in.");
-        document.getElementById("li-username").value = username;
-        document.getElementById("li-password").value = "";
-        errEl.classList.add("hidden");
-        showPage("loginPage");
+        showError("signupError", "");
+        pendingVerifyUsername = data.username;
+        openVerifyPage(data, email);
     } else {
-        errEl.textContent = data.error;
-        errEl.classList.remove("hidden");
+        showError("signupError", data.error);
     }
 }
 
 async function doLogin() {
     const username = document.getElementById("li-username").value.trim();
     const password = document.getElementById("li-password").value;
-    const errEl    = document.getElementById("loginError");
 
     const res = await postJson("/api/login", { username, password });
     const data = await res.json();
     if (data.ok) {
         currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
+        showError("loginError", "");
         enterApp();
-    } else {
-        errEl.textContent = data.error;
-        errEl.classList.remove("hidden");
+        return;
     }
+    if (data.needsVerification) {
+        showError("loginError", "");
+        pendingVerifyUsername = data.username;
+        openVerifyPage(data, "");
+        return;
+    }
+    showError("loginError", data.error);
 }
 
 async function doLogout() {
     await postJson("/api/logout", {});
     currentUser = null;
     allGames = [];
+    accountData = null;
     if (gamesTimer) clearInterval(gamesTimer);
     gamesTimer = null;
     if (trackingTimer) clearInterval(trackingTimer);
@@ -144,6 +290,131 @@ async function checkSession() {
         currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
         enterApp();
     }
+}
+
+// ─── EMAIL VERIFICATION ───────────────────────────────────────────────────────
+function openVerifyPage(data, email) {
+    const target = email || data.email || "your email address";
+    const label = document.getElementById("verifyTarget");
+    if (label) label.textContent = target;
+    document.getElementById("vf-code").value = "";
+    showError("verifyError", "");
+
+    if (data.devCode) {
+        setFormStatus("verifyStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
+    } else if (data.mailSent) {
+        setFormStatus("verifyStatus", "We sent a 6-digit code to your inbox. It expires in 15 minutes.", "ok");
+    } else {
+        setFormStatus("verifyStatus", "Could not send the email. Use Resend to try again.", "error");
+    }
+
+    showPage("verifyPage");
+    setTimeout(() => document.getElementById("vf-code").focus(), 60);
+}
+
+async function doVerifyEmail() {
+    const code = document.getElementById("vf-code").value.trim();
+    if (!pendingVerifyUsername) return showError("verifyError", "Start from the login page.");
+    if (!code) return showError("verifyError", "Enter the 6-digit code");
+
+    const res  = await postJson("/api/verify-email", { username: pendingVerifyUsername, code });
+    const data = await res.json();
+    if (!data.ok) return showError("verifyError", data.error || "Could not verify that code");
+
+    showError("verifyError", "");
+    pendingVerifyUsername = "";
+    currentUser = { username: data.username, tier: data.tier, isOwner: data.isOwner, robloxUsername: data.robloxUsername || "" };
+    enterApp();
+}
+
+async function resendVerification() {
+    if (!pendingVerifyUsername) return;
+    setFormStatus("verifyStatus", "Sending a new code...", "");
+    const res  = await postJson("/api/resend-verification", { username: pendingVerifyUsername });
+    const data = await res.json();
+    if (!data.ok) return setFormStatus("verifyStatus", data.error || "Could not resend the code", "error");
+    if (data.devCode) {
+        setFormStatus("verifyStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
+    } else {
+        setFormStatus("verifyStatus", "A new code is on its way.", "ok");
+    }
+}
+
+// ─── PASSWORD RESET ───────────────────────────────────────────────────────────
+function openForgotPage() {
+    document.getElementById("fp-email").value = "";
+    showError("forgotError", "");
+    setFormStatus("forgotStatus", "", "");
+    showPage("forgotPage");
+}
+
+async function doForgotPassword() {
+    const email = document.getElementById("fp-email").value.trim();
+    if (!email) return showError("forgotError", "Enter your email address");
+
+    setFormStatus("forgotStatus", "Sending...", "");
+    const res  = await postJson("/api/forgot-password", { email });
+    const data = await res.json();
+    if (!data.ok) {
+        setFormStatus("forgotStatus", "", "");
+        return showError("forgotError", data.error || "Could not start a password reset");
+    }
+
+    showError("forgotError", "");
+    pendingResetEmail = email;
+    document.getElementById("rp-code").value = "";
+    document.getElementById("rp-password").value = "";
+    const label = document.getElementById("resetTarget");
+    if (label) label.textContent = email;
+
+    if (data.devCode) {
+        setFormStatus("resetStatus", `Email is not configured on this server, so here is your code: ${data.devCode}`, "ok");
+    } else {
+        setFormStatus("resetStatus", "If that email has an account, a reset code is on the way.", "ok");
+    }
+    showError("resetError", "");
+    showPage("resetPage");
+    setTimeout(() => document.getElementById("rp-code").focus(), 60);
+}
+
+async function doResetPassword() {
+    const code     = document.getElementById("rp-code").value.trim();
+    const password = document.getElementById("rp-password").value;
+    if (!pendingResetEmail) return showError("resetError", "Start the reset from the login page.");
+    if (!code)     return showError("resetError", "Enter the code from your email");
+    if (!password) return showError("resetError", "Choose a new password");
+
+    const res  = await postJson("/api/reset-password", { email: pendingResetEmail, code, password });
+    const data = await res.json();
+    if (!data.ok) return showError("resetError", data.error || "Could not reset your password");
+
+    showError("resetError", "");
+    pendingResetEmail = "";
+    document.getElementById("li-username").value = data.username || "";
+    document.getElementById("li-password").value = "";
+    showError("loginError", "");
+    setFormStatus("loginNotice", "Password updated. Log in with your new password.", "ok");
+    showPage("loginPage");
+}
+
+async function doChangePassword() {
+    const currentPassword = document.getElementById("cp-current").value;
+    const newPassword     = document.getElementById("cp-new").value;
+    const confirmPassword = document.getElementById("cp-confirm").value;
+
+    if (!currentPassword || !newPassword) return setFormStatus("changePwStatus", "Fill in every field.", "error");
+    if (newPassword !== confirmPassword)  return setFormStatus("changePwStatus", "New passwords do not match.", "error");
+
+    setFormStatus("changePwStatus", "Saving...", "");
+    const res  = await postJson("/api/change-password", { currentPassword, newPassword });
+    const data = await res.json();
+    if (!data.ok) return setFormStatus("changePwStatus", data.error || "Could not change your password", "error");
+
+    document.getElementById("cp-current").value = "";
+    document.getElementById("cp-new").value = "";
+    document.getElementById("cp-confirm").value = "";
+    setFormStatus("changePwStatus", "Password updated.", "ok");
+    loadAccount();
 }
 
 // ─── APP ENTRY ────────────────────────────────────────────────────────────────
@@ -174,13 +445,54 @@ function enterApp() {
         document.getElementById("ownerTabBtn").classList.remove("hidden");
     }
 
+    syncSettingsControls();
     loadGames();
     loadTracking();
+    loadAccount();
     switchTab("overview");
-    if (gamesTimer) clearInterval(gamesTimer);
-    gamesTimer = setInterval(loadGames, 5000);
+    restartGamesTimer();
     if (trackingTimer) clearInterval(trackingTimer);
     trackingTimer = setInterval(loadTracking, 5000);
+}
+
+// ─── ACCOUNT / SECURITY ───────────────────────────────────────────────────────
+async function loadAccount() {
+    if (!currentUser) return;
+    try {
+        const res = await fetch("/api/account");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.ok) return;
+        accountData = data;
+        renderAccount(data);
+    } catch {}
+}
+
+function renderAccount(data) {
+    const rows = [
+        ["Username", escapeHtml(data.username)],
+        ["Email", escapeHtml(data.email || "—")],
+        ["Tier", escapeHtml(TIER_LABELS[data.tier] || data.tier || "No Tier")],
+        ["Roblox username", escapeHtml(data.robloxUsername || "Not set")],
+        ["Member since", escapeHtml(relativeDate(data.joinedAt))],
+        ["Password last changed", escapeHtml(data.passwordChangedAt ? relativeDate(data.passwordChangedAt) : "Never")]
+    ];
+    const table = document.getElementById("accountRows");
+    if (table) {
+        table.innerHTML = rows.map(([k, v]) =>
+            `<div class="kv-row"><span>${k}</span><b>${v}</b></div>`
+        ).join("");
+    }
+
+    const badge = document.getElementById("verifyBadge");
+    if (badge) {
+        badge.className = "verify-badge " + (data.emailVerified ? "verified" : "unverified");
+        badge.textContent = data.emailVerified ? "Email verified" : "Email not verified";
+    }
+    const mailNote = document.getElementById("mailConfigNote");
+    if (mailNote) {
+        mailNote.classList.toggle("hidden", !!data.mailEnabled);
+    }
 }
 
 // ─── GAMES ────────────────────────────────────────────────────────────────────
@@ -192,53 +504,164 @@ async function loadGames() {
     const overviewGames = document.getElementById("overviewGames");
     if (overviewGames) overviewGames.textContent = allGames.length;
     renderGames();
+    renderFavorites();
+    renderStats();
+}
+
+function isFavorite(placeId) {
+    return favorites.includes(String(placeId));
+}
+
+function toggleFavorite(placeId) {
+    const id = String(placeId);
+    const i = favorites.indexOf(id);
+    if (i === -1) favorites.push(id);
+    else favorites.splice(i, 1);
+    persistFavorites();
+    renderGames();
+    renderFavorites();
+}
+
+function sortGames(list) {
+    const arr = [...list];
+    const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
+    switch (settings.sort) {
+        case "players-desc": arr.sort((a, b) => (Number(b.players) || 0) - (Number(a.players) || 0)); break;
+        case "name-asc":     arr.sort(byName); break;
+        case "name-desc":    arr.sort((a, b) => byName(b, a)); break;
+        case "players-asc":
+        default:             arr.sort((a, b) => (Number(a.players) || 0) - (Number(b.players) || 0)); break;
+    }
+    if (settings.favoritesFirst) {
+        arr.sort((a, b) => (isFavorite(b.placeId) ? 1 : 0) - (isFavorite(a.placeId) ? 1 : 0));
+    }
+    return arr;
+}
+
+function gameCardHtml(g) {
+    const name = escapeHtml(g.name || "Unknown");
+    const rawName = g.name || "Unknown";
+    const placeId = escapeHtml(g.placeId || "");
+    const icon = escapeHtml(g.icon || "");
+    const creator = escapeHtml(g.creator || "Unknown");
+    const players = Number(g.players) || 0;
+    const heat = players === 0 ? "empty" : players < 10 ? "low" : players < 100 ? "mid" : "high";
+    const fav = isFavorite(g.placeId);
+    return `
+    <div class="game-card">
+        <div class="game-thumb" data-initial="${name.slice(0, 1).toUpperCase()}">
+            ${icon ? `<img src="${icon}" alt="" loading="lazy" onerror="this.classList.add('img-fail')">` : ""}
+            <div class="thumb-scrim"></div>
+            <div class="thumb-pills">
+                <span class="live-pill heat-${heat}"><i></i>${players} online</span>
+                ${g.earlyAccess ? '<span class="ea-pill">Early Access</span>' : ""}
+            </div>
+            <button class="fav-btn${fav ? " on" : ""}" title="${fav ? "Remove from favorites" : "Add to favorites"}"
+                    onclick="toggleFavorite('${jsString(g.placeId)}')" aria-label="Toggle favorite">
+                <svg viewBox="0 0 24 24" fill="${fav ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+        </div>
+        <div class="game-info">
+            <h3 title="${name}">${name}</h3>
+            <div class="game-meta">
+                <span class="meta-row"><em>Creator</em><b>${creator}</b></span>
+                <span class="meta-row"><em>Place ID</em><b>${placeId}</b></span>
+            </div>
+            <div class="game-actions">
+                <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">
+                    <span>Join Game</span>
+                </button>
+            </div>
+        </div>
+    </div>`;
 }
 
 function renderGames() {
     const search = (document.getElementById("gameSearch")?.value || "").toLowerCase();
     const grid   = document.getElementById("gamesGrid");
-    const filtered = allGames.filter(g =>
+    if (!grid) return;
+    let filtered = allGames.filter(g =>
         !search || String(g.name || "").toLowerCase().includes(search)
     );
+    if (settings.hideEmpty) filtered = filtered.filter(g => (Number(g.players) || 0) > 0);
+    filtered = sortGames(filtered);
+
+    const countEl = document.getElementById("gamesCount");
+    if (countEl) countEl.textContent = `${filtered.length} of ${allGames.length}`;
 
     if (filtered.length === 0) {
-        grid.innerHTML = `<div class="no-games"><div class="no-games-mark"></div><h3>${currentUser.tier === "none" ? "No tier yet" : "No games found"}</h3><p>${currentUser.tier === "none" ? "Head to the Upgrade tab to unlock tracked servers." : "No tracked games match your tier or search right now."}</p></div>`;
+        grid.innerHTML = `<div class="no-games"><div class="no-games-mark"></div><h3>${currentUser.tier === "none" ? "No tier yet" : "No games found"}</h3><p>${currentUser.tier === "none" ? "Head to the Upgrade tab to unlock tracked servers." : "No tracked games match your tier, search, or filters right now."}</p></div>`;
         return;
     }
 
-    grid.innerHTML = filtered.map(g => {
-        const name = escapeHtml(g.name || "Unknown");
-        const rawName = g.name || "Unknown";
-        const placeId = escapeHtml(g.placeId || "");
-        const icon = escapeHtml(g.icon || "");
-        const creator = escapeHtml(g.creator || "Unknown");
-        const players = Number(g.players) || 0;
-        const heat = players === 0 ? "empty" : players < 10 ? "low" : players < 100 ? "mid" : "high";
-        return `
-        <div class="game-card">
-            <div class="game-thumb" data-initial="${name.slice(0, 1).toUpperCase()}">
-                ${icon ? `<img src="${icon}" alt="" loading="lazy" onerror="this.classList.add('img-fail')">` : ""}
-                <div class="thumb-scrim"></div>
-                <div class="thumb-pills">
-                    <span class="live-pill heat-${heat}"><i></i>${players} online</span>
-                    ${g.earlyAccess ? '<span class="ea-pill">Early Access</span>' : ""}
-                </div>
-            </div>
-            <div class="game-info">
-                <h3 title="${name}">${name}</h3>
-                <div class="game-meta">
-                    <span class="meta-row"><em>Creator</em><b>${creator}</b></span>
-                    <span class="meta-row"><em>Place ID</em><b>${placeId}</b></span>
-                </div>
-                <div class="game-actions">
-                    <button class="btn-join" onclick="joinGame('${jsString(g.placeId)}', '${jsString(rawName)}')">
-                        <span>Join Game</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    }).join("");
+    grid.innerHTML = filtered.map(gameCardHtml).join("");
+}
+
+function renderFavorites() {
+    const grid = document.getElementById("favoritesGrid");
+    if (!grid) return;
+    const list = sortGames(allGames.filter(g => isFavorite(g.placeId)));
+
+    const countEl = document.getElementById("favoritesCount");
+    if (countEl) countEl.textContent = String(list.length);
+
+    if (list.length === 0) {
+        grid.innerHTML = `<div class="no-games"><div class="no-games-mark"></div><h3>No favorites yet</h3><p>Tap the star on any game card to pin it here. Favorites are saved on this device.</p></div>`;
+        return;
+    }
+    grid.innerHTML = list.map(gameCardHtml).join("");
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+function renderStats() {
+    const wrap = document.getElementById("statsGrid");
+    if (!wrap) return;
+
+    const total   = allGames.length;
+    const players = allGames.reduce((sum, g) => sum + (Number(g.players) || 0), 0);
+    const active  = allGames.filter(g => (Number(g.players) || 0) > 0).length;
+    const early   = allGames.filter(g => g.earlyAccess).length;
+    const avg     = total ? Math.round((players / total) * 10) / 10 : 0;
+    const sorted  = [...allGames].sort((a, b) => (Number(b.players) || 0) - (Number(a.players) || 0));
+    const busiest = sorted[0];
+    const quietest = [...allGames].sort((a, b) => (Number(a.players) || 0) - (Number(b.players) || 0))[0];
+
+    wrap.innerHTML = [
+        ["Tracked Games", total, "Servers visible to your tier"],
+        ["Players Online", players, "Across every tracked server"],
+        ["Active Servers", active, "With at least one player"],
+        ["Average Population", avg, "Players per tracked server"],
+        ["Early Access", early, "Flagged early access games"],
+        ["Favorites", favorites.length, "Pinned on this device"]
+    ].map(([label, value, note]) => `
+        <div class="stat-card">
+            <span>${escapeHtml(String(value))}</span>
+            <strong>${escapeHtml(label)}</strong>
+            <p>${escapeHtml(note)}</p>
+        </div>`).join("");
+
+    const highlight = document.getElementById("statsHighlight");
+    if (highlight) {
+        if (!total) {
+            highlight.innerHTML = `<p class="tab-sub">No tracked games yet. Once servers report in, their breakdown appears here.</p>`;
+        } else {
+            const max = Math.max(1, Number(busiest?.players) || 1);
+            const bars = sorted.slice(0, 8).map(g => {
+                const p = Number(g.players) || 0;
+                const pct = Math.round((p / max) * 100);
+                return `
+                <div class="bar-row">
+                    <span class="bar-label" title="${escapeHtml(g.name || "Unknown")}">${escapeHtml(g.name || "Unknown")}</span>
+                    <span class="bar-track"><i style="width:${pct}%"></i></span>
+                    <span class="bar-value">${p}</span>
+                </div>`;
+            }).join("");
+            highlight.innerHTML = `
+                <div class="stat-line"><em>Busiest</em><b>${escapeHtml(busiest?.name || "—")} · ${Number(busiest?.players) || 0} players</b></div>
+                <div class="stat-line"><em>Quietest</em><b>${escapeHtml(quietest?.name || "—")} · ${Number(quietest?.players) || 0} players</b></div>
+                <div class="bar-chart">${bars}</div>`;
+        }
+    }
 }
 
 // USER TRACKING
@@ -275,6 +698,7 @@ async function saveTracking() {
         currentUser.robloxUsername = data.robloxUsername || "";
         renderTrackingStatus(data);
         updateOverviewTracking(data);
+        loadAccount();
     } else {
         status.textContent = data.error || "Could not save tracking settings.";
         status.classList.add("error");
@@ -337,6 +761,18 @@ window.popoutExec = popoutExec;
 window.runExec = runExec;
 window.toggleCursorGlow = toggleCursorGlow;
 window.toggleGamesRefresh = toggleGamesRefresh;
+window.doVerifyEmail = doVerifyEmail;
+window.resendVerification = resendVerification;
+window.openForgotPage = openForgotPage;
+window.doForgotPassword = doForgotPassword;
+window.doResetPassword = doResetPassword;
+window.doChangePassword = doChangePassword;
+window.toggleFavorite = toggleFavorite;
+window.updateSetting = updateSetting;
+window.resetSettings = resetSettings;
+window.clearFavorites = clearFavorites;
+window.filterOwnerUsers = filterOwnerUsers;
+window.setTier = setTier;
 
 // ─── JOIN GAME ────────────────────────────────────────────────────────────────
 async function joinGame(placeId, name) {
@@ -506,6 +942,7 @@ function renderOwnerUsers(list) {
                 <tr>
                     <th>Username</th>
                     <th>Email</th>
+                    <th>Verified</th>
                     <th>Current Tier</th>
                     <th>Set Tier</th>
                     <th></th>
@@ -517,10 +954,14 @@ function renderOwnerUsers(list) {
                     const email = escapeHtml(u.email);
                     const tier = escapeHtml(TIER_LABELS[u.tier] || u.tier || "none");
                     const selectId = userDomId(u.username);
+                    const verified = u.emailVerified
+                        ? '<span class="pill-yes">Yes</span>'
+                        : '<span class="pill-no">No</span>';
                     return `
                     <tr>
                         <td>${username}</td>
                         <td>${email}</td>
+                        <td>${verified}</td>
                         <td>${tier}</td>
                         <td>
                             <select class="tier-select" id="${selectId}">
@@ -558,6 +999,14 @@ document.addEventListener("keydown", e => {
         }
     }
     if (e.key === "Escape") closeExecModal();
+    if (e.key === "Enter") {
+        const active = document.activeElement;
+        if (!active) return;
+        if (active.id === "vf-code") doVerifyEmail();
+        if (active.id === "fp-email") doForgotPassword();
+        if (active.id === "rp-code" || active.id === "rp-password") doResetPassword();
+        if (active.id === "li-username" || active.id === "li-password") doLogin();
+    }
 });
 
 document.getElementById("execModal").addEventListener("click", e => {
@@ -571,5 +1020,14 @@ document.addEventListener("click", e => {
     showPage(pageTarget.dataset.page);
 });
 
+document.addEventListener("click", e => {
+    const swatch = e.target.closest(".accent-swatch");
+    if (!swatch) return;
+    updateSetting("accent", swatch.dataset.accent);
+    syncSettingsControls();
+});
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
+loadSettings();
+applySettings();
 checkSession();
