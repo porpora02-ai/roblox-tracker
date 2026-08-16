@@ -62,7 +62,7 @@
             <div class="feature-card">
                 <div class="feature-num">01</div>
                 <h3>Create an account</h3>
-                <p>Sign up in seconds and pick the tier that matches the servers you want to reach.</p>
+                <p>Sign up, confirm the code we email you, and pick the tier that matches the servers you want to reach.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-num">02</div>
@@ -101,15 +101,15 @@
             <div id="signupError" class="error-msg hidden"></div>
             <div class="field">
                 <label for="su-email">Email</label>
-                <input id="su-email" type="email" placeholder="you@example.com" class="inp">
+                <input id="su-email" type="email" placeholder="you@example.com" class="inp" autocomplete="email">
             </div>
             <div class="field">
                 <label for="su-username">Username</label>
-                <input id="su-username" type="text" placeholder="Choose a username" class="inp">
+                <input id="su-username" type="text" placeholder="Choose a username" class="inp" autocomplete="username">
             </div>
             <div class="field">
                 <label for="su-password">Password</label>
-                <input id="su-password" type="password" placeholder="At least 8 characters" class="inp">
+                <input id="su-password" type="password" placeholder="At least 8 characters" class="inp" autocomplete="new-password">
             </div>
             <div class="field">
                 <label for="su-dob">Date of Birth</label>
@@ -138,17 +138,87 @@
             <h2>Welcome Back</h2>
             <p class="auth-sub">Log in to your Vantix account</p>
             <div id="loginError" class="error-msg hidden"></div>
+            <p id="loginNotice" class="form-status hidden"></p>
             <div class="field">
                 <label for="li-username">Username</label>
-                <input id="li-username" type="text" placeholder="Your username" class="inp">
+                <input id="li-username" type="text" placeholder="Your username" class="inp" autocomplete="username">
             </div>
             <div class="field">
-                <label for="li-password">Password</label>
-                <input id="li-password" type="password" placeholder="Your password" class="inp">
+                <div class="field-head">
+                    <label for="li-password">Password</label>
+                    <a class="field-link" onclick="openForgotPage()">Forgot password?</a>
+                </div>
+                <input id="li-password" type="password" placeholder="Your password" class="inp" autocomplete="current-password">
             </div>
             <button onclick="doLogin()" class="btn-primary full">Log In</button>
             <p class="auth-switch">No account? <a data-page="signupPage" onclick="showPage('signupPage')">Sign up</a></p>
             <p class="auth-switch"><a data-page="landingPage" onclick="showPage('landingPage')">Back to home</a></p>
+        </div>
+    </div>
+</div>
+
+<div id="verifyPage" class="page auth-page hidden">
+    <div class="auth-shell narrow">
+        <div class="auth-box">
+            <div class="auth-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><polyline points="2.5 6.5 12 13 21.5 6.5"/></svg>
+            </div>
+            <h2>Check your email</h2>
+            <p class="auth-sub">We sent a 6-digit code to <b id="verifyTarget">your email address</b>. Enter it below to activate your account.</p>
+            <div id="verifyError" class="error-msg hidden"></div>
+            <p id="verifyStatus" class="form-status hidden"></p>
+            <div class="field">
+                <label for="vf-code">Verification code</label>
+                <input id="vf-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="inp code-inp" autocomplete="one-time-code">
+            </div>
+            <button onclick="doVerifyEmail()" class="btn-primary full">Verify &amp; Continue</button>
+            <p class="auth-switch">Didn't get it? <a onclick="resendVerification()">Resend code</a></p>
+            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
+        </div>
+    </div>
+</div>
+
+<div id="forgotPage" class="page auth-page hidden">
+    <div class="auth-shell narrow">
+        <div class="auth-box">
+            <div class="auth-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2>Forgot password</h2>
+            <p class="auth-sub">Enter the email on your account and we will send a reset code.</p>
+            <div id="forgotError" class="error-msg hidden"></div>
+            <p id="forgotStatus" class="form-status hidden"></p>
+            <div class="field">
+                <label for="fp-email">Email</label>
+                <input id="fp-email" type="email" placeholder="you@example.com" class="inp" autocomplete="email">
+            </div>
+            <button onclick="doForgotPassword()" class="btn-primary full">Send Reset Code</button>
+            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
+        </div>
+    </div>
+</div>
+
+<div id="resetPage" class="page auth-page hidden">
+    <div class="auth-shell narrow">
+        <div class="auth-box">
+            <div class="auth-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            </div>
+            <h2>Set a new password</h2>
+            <p class="auth-sub">Enter the code sent to <b id="resetTarget">your email</b> and choose a new password.</p>
+            <div id="resetError" class="error-msg hidden"></div>
+            <p id="resetStatus" class="form-status hidden"></p>
+            <div class="field">
+                <label for="rp-code">Reset code</label>
+                <input id="rp-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="inp code-inp" autocomplete="one-time-code">
+            </div>
+            <div class="field">
+                <label for="rp-password">New password</label>
+                <input id="rp-password" type="password" placeholder="At least 8 characters" class="inp" autocomplete="new-password">
+            </div>
+            <button onclick="doResetPassword()" class="btn-primary full">Reset Password</button>
+            <p class="auth-switch">Need a new code? <a onclick="openForgotPage()">Start over</a></p>
+            <p class="auth-switch"><a data-page="loginPage" onclick="showPage('loginPage')">Back to log in</a></p>
         </div>
     </div>
 </div>
@@ -163,14 +233,29 @@
             </div>
         </div>
         <div class="tabs side-tabs">
+            <div class="side-group">Main</div>
             <button class="tab active" onclick="switchTab('overview')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>Overview
             </button>
             <button class="tab" onclick="switchTab('games')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><rect x="2" y="6" width="20" height="12" rx="6"/></svg></span>Games
             </button>
+            <button class="tab" onclick="switchTab('favorites')">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>Favorites
+            </button>
+            <button class="tab" onclick="switchTab('stats')">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats
+            </button>
             <button class="tab" onclick="switchTab('tracking')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg></span>Tracking
+            </button>
+
+            <div class="side-group">Account</div>
+            <button class="tab" onclick="switchTab('profile')">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Profile
+            </button>
+            <button class="tab" onclick="switchTab('security')">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Security
             </button>
             <button class="tab" onclick="switchTab('settings')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6V4a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings
@@ -178,8 +263,8 @@
             <button class="tab" onclick="switchTab('upgrade')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>Upgrade
             </button>
-            <button class="tab" onclick="switchTab('profile')">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>Profile
+            <button class="tab" onclick="switchTab('help')">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>Help
             </button>
             <button class="tab owner-tab hidden" id="ownerTabBtn" onclick="switchTab('owner')">
                 <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>Owner
@@ -235,9 +320,10 @@
                 <h3>Quick Links</h3>
                 <div class="quick-actions">
                     <button class="btn-primary" onclick="switchTab('games')">Browse Games</button>
+                    <button class="btn-ghost" onclick="switchTab('favorites')">Favorites</button>
+                    <button class="btn-ghost" onclick="switchTab('stats')">Stats</button>
                     <button class="btn-ghost" onclick="switchTab('tracking')">Tracking</button>
-                    <button class="btn-ghost" onclick="switchTab('profile')">My Profile</button>
-                    <button class="btn-ghost" onclick="switchTab('settings')">Settings</button>
+                    <button class="btn-ghost" onclick="switchTab('security')">Security</button>
                 </div>
             </div>
             <div class="activity-panel">
@@ -253,9 +339,12 @@
                 <div class="header-row">
                     <div>
                         <h2>Tracked Games</h2>
-                        <p class="tab-sub">Live server population, refreshed every 5 seconds.</p>
+                        <p class="tab-sub">Live server population, refreshed automatically.</p>
                     </div>
-                    <div class="live-indicator"><i></i>Live</div>
+                    <div class="header-tools">
+                        <span class="count-chip" id="gamesCount">0 of 0</span>
+                        <div class="live-indicator"><i></i>Live</div>
+                    </div>
                 </div>
                 <div class="search-wrap">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -263,6 +352,28 @@
                 </div>
             </div>
             <div id="gamesGrid"></div>
+        </div>
+
+        <div id="tab-favorites" class="tab-content hidden">
+            <div class="tab-header">
+                <div class="header-row">
+                    <div>
+                        <h2>Favorites</h2>
+                        <p class="tab-sub">Games you pinned with the star. Saved on this device only.</p>
+                    </div>
+                    <span class="count-chip"><b id="favoritesCount">0</b> pinned</span>
+                </div>
+            </div>
+            <div id="favoritesGrid"></div>
+        </div>
+
+        <div id="tab-stats" class="tab-content hidden">
+            <div class="tab-header">
+                <h2>Stats</h2>
+                <p class="tab-sub">A live breakdown of every server your tier can see.</p>
+            </div>
+            <div id="statsGrid" class="stats-grid"></div>
+            <div id="statsHighlight" class="stats-highlight"></div>
         </div>
 
         <div id="tab-tracking" class="tab-content hidden">
@@ -280,20 +391,99 @@
             </div>
         </div>
 
+        <div id="tab-security" class="tab-content hidden">
+            <div class="tab-header">
+                <h2>Security</h2>
+                <p class="tab-sub">Your account details, email verification status, and password.</p>
+            </div>
+            <div class="security-grid">
+                <div class="settings-panel">
+                    <h3>Account</h3>
+                    <div id="verifyBadge" class="verify-badge unverified">Email not verified</div>
+                    <div id="accountRows" class="kv-list"></div>
+                    <p id="mailConfigNote" class="inline-note hidden">Email delivery is not configured on this server, so codes are printed to the server console instead of being sent.</p>
+                </div>
+                <div class="settings-panel">
+                    <h3>Change Password</h3>
+                    <div class="field">
+                        <label for="cp-current">Current password</label>
+                        <input id="cp-current" type="password" class="inp" autocomplete="current-password" placeholder="Current password">
+                    </div>
+                    <div class="field">
+                        <label for="cp-new">New password</label>
+                        <input id="cp-new" type="password" class="inp" autocomplete="new-password" placeholder="At least 8 characters">
+                    </div>
+                    <div class="field">
+                        <label for="cp-confirm">Confirm new password</label>
+                        <input id="cp-confirm" type="password" class="inp" autocomplete="new-password" placeholder="Repeat new password">
+                    </div>
+                    <p id="changePwStatus" class="form-status hidden"></p>
+                    <button onclick="doChangePassword()" class="btn-primary full">Update Password</button>
+                </div>
+            </div>
+        </div>
+
         <div id="tab-settings" class="tab-content hidden">
             <div class="tab-header">
                 <h2>Settings</h2>
-                <p class="tab-sub">Control how Vantix looks and behaves on this device.</p>
+                <p class="tab-sub">Everything here is saved in this browser only.</p>
             </div>
             <div class="settings-grid">
                 <div class="settings-panel">
-                    <h3>Interface</h3>
-                    <label class="setting-row"><span>Cursor Glow</span><input type="checkbox" checked onchange="toggleCursorGlow(this.checked)"></label>
-                    <label class="setting-row"><span>Auto Refresh Games</span><input type="checkbox" checked onchange="toggleGamesRefresh(this.checked)"></label>
+                    <h3>Appearance</h3>
+                    <div class="accent-row">
+                        <span class="setting-label">Accent color</span>
+                        <div class="accent-swatches">
+                            <button class="accent-swatch" data-accent="green" style="--sw:#00ff88" title="Green"></button>
+                            <button class="accent-swatch" data-accent="cyan" style="--sw:#22d3ee" title="Cyan"></button>
+                            <button class="accent-swatch" data-accent="violet" style="--sw:#a78bfa" title="Violet"></button>
+                            <button class="accent-swatch" data-accent="amber" style="--sw:#fbbf24" title="Amber"></button>
+                            <button class="accent-swatch" data-accent="rose" style="--sw:#fb7185" title="Rose"></button>
+                        </div>
+                    </div>
+                    <label class="setting-row"><span>Cursor glow</span><input id="setCursorGlow" type="checkbox" onchange="updateSetting('cursorGlow', this.checked)"></label>
+                    <label class="setting-row"><span>Background effects</span><input id="setBgEffects" type="checkbox" onchange="updateSetting('bgEffects', this.checked)"></label>
+                    <label class="setting-row"><span>Animations</span><input id="setAnimations" type="checkbox" onchange="updateSetting('animations', this.checked)"></label>
+                    <label class="setting-row"><span>Card density</span>
+                        <select id="setDensity" class="tier-select" onchange="updateSetting('density', this.value)">
+                            <option value="comfortable">Comfortable</option>
+                            <option value="compact">Compact</option>
+                        </select>
+                    </label>
                 </div>
+
                 <div class="settings-panel">
-                    <h3>Tracking</h3>
-                    <p class="tab-sub">Bind your Roblox username under the Tracking tab. Vantix recognises you the moment you join a whitelisted server.</p>
+                    <h3>Games</h3>
+                    <label class="setting-row"><span>Auto refresh</span><input id="setAutoRefresh" type="checkbox" onchange="updateSetting('autoRefresh', this.checked)"></label>
+                    <label class="setting-row"><span>Refresh interval</span>
+                        <select id="setRefreshInterval" class="tier-select" onchange="updateSetting('refreshInterval', Number(this.value))">
+                            <option value="3000">3 seconds</option>
+                            <option value="5000">5 seconds</option>
+                            <option value="10000">10 seconds</option>
+                            <option value="30000">30 seconds</option>
+                            <option value="60000">1 minute</option>
+                        </select>
+                    </label>
+                    <label class="setting-row"><span>Sort games by</span>
+                        <select id="setSort" class="tier-select" onchange="updateSetting('sort', this.value)">
+                            <option value="players-asc">Fewest players</option>
+                            <option value="players-desc">Most players</option>
+                            <option value="name-asc">Name A–Z</option>
+                            <option value="name-desc">Name Z–A</option>
+                        </select>
+                    </label>
+                    <label class="setting-row"><span>Hide empty servers</span><input id="setHideEmpty" type="checkbox" onchange="updateSetting('hideEmpty', this.checked)"></label>
+                    <label class="setting-row"><span>Favorites first</span><input id="setFavoritesFirst" type="checkbox" onchange="updateSetting('favoritesFirst', this.checked)"></label>
+                </div>
+
+                <div class="settings-panel">
+                    <h3>Data</h3>
+                    <p class="tab-sub">Settings and favorites live in this browser's local storage. Clearing them will not touch your account.</p>
+                    <p id="settingsStatus" class="form-status hidden"></p>
+                    <div class="quick-actions">
+                        <button class="btn-ghost" onclick="clearFavorites()">Clear Favorites</button>
+                        <button class="btn-ghost" onclick="resetSettings()">Reset Settings</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -328,8 +518,44 @@
                 <div>
                     <h3 id="profileUsername">User</h3>
                     <p id="profileTier">No Tier</p>
-                    <button class="btn-primary" onclick="switchTab('tracking')">Manage Tracking</button>
+                    <div class="quick-actions">
+                        <button class="btn-primary" onclick="switchTab('tracking')">Manage Tracking</button>
+                        <button class="btn-ghost" onclick="switchTab('security')">Security</button>
+                    </div>
                 </div>
+            </div>
+        </div>
+
+        <div id="tab-help" class="tab-content hidden">
+            <div class="tab-header">
+                <h2>Help</h2>
+                <p class="tab-sub">Common questions about tiers, tracking, and verification.</p>
+            </div>
+            <div class="faq-list">
+                <details class="faq" open>
+                    <summary>Why can't I see any games?</summary>
+                    <p>Your tier decides which servers appear. Bronze shows servers under 10 players, Absolute shows everything. If you have no tier yet, open the Upgrade tab.</p>
+                </details>
+                <details class="faq">
+                    <summary>How does the in-game panel work?</summary>
+                    <p>Bind your Roblox username under Tracking. When you join a whitelisted server, Vantix recognises you and your panel loads automatically inside the game.</p>
+                </details>
+                <details class="faq">
+                    <summary>I never got my verification email.</summary>
+                    <p>Check your spam folder first, then press Resend on the verification screen. Codes expire after 15 minutes and you can request a new one every 60 seconds.</p>
+                </details>
+                <details class="faq">
+                    <summary>I forgot my password.</summary>
+                    <p>Use "Forgot password?" on the login screen. We email a 6-digit code that lets you set a new password. The code expires after 15 minutes.</p>
+                </details>
+                <details class="faq">
+                    <summary>Are my favorites synced across devices?</summary>
+                    <p>No. Favorites and settings are stored in your browser's local storage, so each device keeps its own list.</p>
+                </details>
+                <details class="faq">
+                    <summary>How do I upgrade my tier?</summary>
+                    <p>DM <strong>#dr.muffinn</strong> on Discord or open a support ticket after purchasing. Tiers are applied manually from the owner panel.</p>
+                </details>
             </div>
         </div>
 
