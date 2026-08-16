@@ -15,6 +15,11 @@ const IS_PROD = process.env.NODE_ENV === "production";
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
     console.error("MONGO_URI is not set. Add your MongoDB connection string to the environment and restart.");
+    // Names only, never values — helps spot a typo'd or missing key in the host's dashboard.
+    const visible = Object.keys(process.env)
+        .filter(k => /mongo|smtp|session|node_env|port/i.test(k))
+        .sort();
+    console.error("Config-related keys this process can see:", visible.length ? visible.join(", ") : "(none)");
     process.exit(1);
 }
 
@@ -49,9 +54,39 @@ if (MAIL_ENABLED) {
         secure: SMTP_PORT === 465,
         auth: { user: SMTP_USER, pass: SMTP_PASS }
     });
+    // Catch placeholder values pasted straight from setup instructions.
+    if (/^your|example\.com|@gmail\.com>?$/i.test(SMTP_USER) && !SMTP_USER.includes("@")) {
+        console.error(`SMTP_USER looks like a placeholder ("${SMTP_USER}"). Set it to your real Gmail address.`);
+    }
+    if (!SMTP_USER.includes("@")) {
+        console.error(`SMTP_USER must be a full email address. Got: "${SMTP_USER}"`);
+    }
+    if (/^your|placeholder|app ?password$/i.test(SMTP_PASS)) {
+        console.error("SMTP_PASS looks like a placeholder. Set it to your 16-character Google App Password.");
+    }
+    if (SMTP_FROM && !/<[^>]+@[^>]+>|^[^<>]+@[^<>]+$/.test(SMTP_FROM)) {
+        console.error(`SMTP_FROM is malformed: "${SMTP_FROM}". Use: Vantix <you@gmail.com>`);
+    }
+
     transporter.verify()
-        .then(() => console.log("SMTP ready:", SMTP_HOST))
-        .catch(e => console.error("SMTP verify failed:", e.message));
+        .then(() => console.log("SMTP ready:", SMTP_HOST, "as", SMTP_USER))
+        .catch(e => {
+            const msg = String(e.message || "");
+            let hint = "";
+            if (/535|BadCredentials|Username and Password not accepted/i.test(msg)) {
+                hint = "Gmail rejected the login. SMTP_PASS must be a 16-character App Password "
+                     + "(Google Account > Security > 2-Step Verification > App passwords), not your normal password. "
+                     + "2-Step Verification must be ON for that option to exist.";
+            } else if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) {
+                hint = `SMTP_HOST could not be resolved. Check the spelling: "${SMTP_HOST}" (should be smtp.gmail.com).`;
+            } else if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET/i.test(msg)) {
+                hint = `Could not reach ${SMTP_HOST}:${SMTP_PORT}. Use port 587, or 465 if your host blocks 587.`;
+            } else if (/self.signed|certificate/i.test(msg)) {
+                hint = "TLS problem. With port 465 the connection must be secure; with 587 it upgrades via STARTTLS.";
+            }
+            console.error("SMTP verify failed:", msg);
+            if (hint) console.error("  ->", hint);
+        });
 } else {
     console.warn("SMTP not configured. Set SMTP_HOST / SMTP_USER / SMTP_PASS to send real email.");
     if (EXPOSE_DEV_CODES) console.warn("Dev mode: verification codes will be printed to this console.");
