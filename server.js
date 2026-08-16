@@ -1,13 +1,125 @@
 const express    = require("express");
 const path       = require("path");
+const crypto     = require("crypto");
 const bcrypt     = require("bcryptjs");
 const session    = require("express-session");
 const MongoStore = require("connect-mongo");
 const mongoose   = require("mongoose");
+const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://porpora02_db_user:N4UW39U7FZvORDhZ@cluster0.fhasxmx.mongodb.net/?appName=Cluster0";
+const IS_PROD = process.env.NODE_ENV === "production";
 
+// ─── SECRETS ──────────────────────────────────────────────────────────────────
+// Nothing sensitive is hardcoded. The server refuses to boot without these.
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+    console.error("MONGO_URI is not set. Add your MongoDB connection string to the environment and restart.");
+    process.exit(1);
+}
+
+// In production a stable secret is required, otherwise every restart would
+// invalidate all sessions. In development one is generated per boot.
+const SESSION_SECRET = process.env.SESSION_SECRET
+    || (IS_PROD ? "" : crypto.randomBytes(32).toString("hex"));
+if (!SESSION_SECRET) {
+    console.error("SESSION_SECRET is not set. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"");
+    process.exit(1);
+}
+if (!process.env.SESSION_SECRET) {
+    console.warn("SESSION_SECRET not set. Using a temporary secret; sessions will not survive a restart.");
+}
+
+// ─── MAIL ─────────────────────────────────────────────────────────────────────
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const SMTP_FROM = process.env.SMTP_FROM || (SMTP_USER ? `Vantix <${SMTP_USER}>` : "");
+const MAIL_ENABLED = !!(SMTP_HOST && SMTP_USER && SMTP_PASS);
+// When SMTP is not configured outside production, codes are returned to the client
+// so the flow stays testable locally. Never enabled in production.
+const EXPOSE_DEV_CODES = !MAIL_ENABLED && !IS_PROD;
+
+let transporter = null;
+if (MAIL_ENABLED) {
+    transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS }
+    });
+    transporter.verify()
+        .then(() => console.log("SMTP ready:", SMTP_HOST))
+        .catch(e => console.error("SMTP verify failed:", e.message));
+} else {
+    console.warn("SMTP not configured. Set SMTP_HOST / SMTP_USER / SMTP_PASS to send real email.");
+    if (EXPOSE_DEV_CODES) console.warn("Dev mode: verification codes will be printed to this console.");
+}
+
+function codeEmailHtml({ heading, intro, code, footnote }) {
+    return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#04070a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#04070a;padding:32px 16px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#080d10;border:1px solid rgba(0,255,136,0.16);border-radius:18px;overflow:hidden;font-family:'Helvetica Neue',Arial,sans-serif;">
+<tr><td style="padding:26px 32px 0;">
+  <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:bold;letter-spacing:4px;color:#00ff88;">VANTIX</div>
+</td></tr>
+<tr><td style="padding:22px 32px 0;">
+  <div style="font-size:22px;font-weight:bold;color:#e6f4ec;">${heading}</div>
+  <div style="font-size:14px;line-height:1.65;color:rgba(230,244,236,0.62);margin-top:10px;">${intro}</div>
+</td></tr>
+<tr><td style="padding:24px 32px 0;">
+  <div style="background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.22);border-radius:12px;padding:20px;text-align:center;">
+    <div style="font-family:'Courier New',monospace;font-size:34px;font-weight:bold;letter-spacing:10px;color:#00ff88;">${code}</div>
+  </div>
+</td></tr>
+<tr><td style="padding:20px 32px 30px;">
+  <div style="font-size:12.5px;line-height:1.7;color:rgba(230,244,236,0.36);">${footnote}</div>
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+async function sendCode(to, purpose, code) {
+    const copy = purpose === "verify"
+        ? {
+            subject: "Your Vantix verification code",
+            heading: "Verify your email",
+            intro: "Enter this code in Vantix to finish creating your account.",
+            footnote: "This code expires in 15 minutes. If you did not sign up for Vantix, you can ignore this email."
+        }
+        : {
+            subject: "Your Vantix password reset code",
+            heading: "Reset your password",
+            intro: "Enter this code in Vantix to choose a new password.",
+            footnote: "This code expires in 15 minutes. If you did not request a password reset, ignore this email and your password stays unchanged."
+        };
+
+    if (!MAIL_ENABLED) {
+        console.log(`[mail:disabled] ${purpose} code for ${to}: ${code}`);
+        return false;
+    }
+    await transporter.sendMail({
+        from: SMTP_FROM,
+        to,
+        subject: copy.subject,
+        text: `${copy.heading}\n\nYour code is ${code}\n\n${copy.footnote}`,
+        html: codeEmailHtml({ heading: copy.heading, intro: copy.intro, code, footnote: copy.footnote })
+    });
+    return true;
+}
+
+function newCode() {
+    return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+}
+
+const CODE_TTL_MS        = 15 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const MAX_CODE_ATTEMPTS  = 6;
+
+// ─── SCHEMAS ──────────────────────────────────────────────────────────────────
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     email:    { type: String, required: true, unique: true },
@@ -15,7 +127,17 @@ const userSchema = new mongoose.Schema({
     dob:      String,
     tier:     { type: String, default: "none" },
     robloxUsername: String,
-    joinedAt: { type: Date, default: Date.now }
+    joinedAt: { type: Date, default: Date.now },
+    emailVerified:  { type: Boolean, default: false },
+    verifyCodeHash: String,
+    verifyExpires:  Date,
+    verifySentAt:   Date,
+    verifyAttempts: { type: Number, default: 0 },
+    resetCodeHash:  String,
+    resetExpires:   Date,
+    resetSentAt:    Date,
+    resetAttempts:  { type: Number, default: 0 },
+    passwordChangedAt: Date
 });
 const gameSchema = new mongoose.Schema({
     placeId:     { type: String, required: true, unique: true },
@@ -112,11 +234,26 @@ function requireCsrf(req, res, next) {
     next();
 }
 
+function validatePassword(password, username, email) {
+    const cleanPassword = String(password || "");
+    if (cleanPassword.length < 8) return "Password must be at least 8 characters";
+    if (!/[A-Za-z]/.test(cleanPassword) || !/[0-9]/.test(cleanPassword)) {
+        return "Password must include letters and numbers";
+    }
+    const localPart = String(email || "").split("@")[0];
+    if (username && cleanPassword.toLowerCase() === String(username).toLowerCase()) {
+        return "Password cannot match your username or email";
+    }
+    if (localPart && cleanPassword.toLowerCase() === localPart.toLowerCase()) {
+        return "Password cannot match your username or email";
+    }
+    return "";
+}
+
 function validateSignup({ email, username, password, dob }) {
     if (!email || !username || !password || !dob) return "All fields required";
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanUsername = String(username).trim();
-    const cleanPassword = String(password);
     const domain = cleanEmail.split("@")[1] || "";
 
     if (!/^[A-Za-z0-9._%+-]{3,64}@[A-Za-z0-9.-]{2,253}\.[A-Za-z]{2,24}$/.test(cleanEmail)) {
@@ -128,16 +265,7 @@ function validateSignup({ email, username, password, dob }) {
     if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) {
         return "Username must be 3-24 letters, numbers, dots, or underscores";
     }
-    if (cleanPassword.length < 8) {
-        return "Password must be at least 8 characters";
-    }
-    if (!/[A-Za-z]/.test(cleanPassword) || !/[0-9]/.test(cleanPassword)) {
-        return "Password must include letters and numbers";
-    }
-    if (cleanPassword.toLowerCase() === cleanUsername.toLowerCase() || cleanPassword.toLowerCase() === cleanEmail.split("@")[0]) {
-        return "Password cannot match your username or email";
-    }
-    return "";
+    return validatePassword(password, cleanUsername, cleanEmail);
 }
 
 async function gamesForTier(tierKey) {
@@ -155,11 +283,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 mongoose.connect(MONGO_URI)
-    .then(() => console.log("MongoDB connected"))
+    .then(async () => {
+        console.log("MongoDB connected");
+        // Accounts created before email verification shipped stay usable.
+        const grandfathered = await User.updateMany(
+            { emailVerified: { $exists: false } },
+            { $set: { emailVerified: true } }
+        );
+        if (grandfathered.modifiedCount) {
+            console.log(`Grandfathered ${grandfathered.modifiedCount} existing account(s) as verified.`);
+        }
+    })
     .catch(e => { console.error("MongoDB failed:", e.message); process.exit(1); });
 
 app.use(session({
-    secret: "vantix-2024",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: MONGO_URI }),
@@ -196,6 +334,56 @@ function trackingPayload(user, status) {
     };
 }
 
+// Issues a fresh code of the given kind and emails it. Returns { sent, devCode, error }.
+async function issueCode(user, kind) {
+    const field = kind === "verify" ? "verify" : "reset";
+    const sentAt = user[`${field}SentAt`];
+    if (sentAt && Date.now() - new Date(sentAt).getTime() < RESEND_COOLDOWN_MS) {
+        const wait = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - new Date(sentAt).getTime())) / 1000);
+        return { error: `Please wait ${wait}s before requesting another code.` };
+    }
+    const code = newCode();
+    user[`${field}CodeHash`] = await bcrypt.hash(code, 10);
+    user[`${field}Expires`]  = new Date(Date.now() + CODE_TTL_MS);
+    user[`${field}SentAt`]   = new Date();
+    user[`${field}Attempts`] = 0;
+    await user.save();
+
+    let sent = false;
+    try {
+        sent = await sendCode(user.email, kind, code);
+    } catch (e) {
+        console.error(`Failed to send ${kind} email:`, e.message);
+        return { error: "Could not send the email. Try again in a moment." };
+    }
+    return { sent, devCode: EXPOSE_DEV_CODES ? code : undefined };
+}
+
+// Checks a submitted code. Returns "" on success, or an error string.
+async function consumeCode(user, kind, submitted) {
+    const field   = kind === "verify" ? "verify" : "reset";
+    const hash    = user[`${field}CodeHash`];
+    const expires = user[`${field}Expires`];
+    if (!hash || !expires) return "Request a new code first.";
+    if (Date.now() > new Date(expires).getTime()) return "That code expired. Request a new one.";
+    if ((user[`${field}Attempts`] || 0) >= MAX_CODE_ATTEMPTS) return "Too many incorrect attempts. Request a new code.";
+
+    const match = await bcrypt.compare(String(submitted || "").trim(), hash);
+    if (!match) {
+        user[`${field}Attempts`] = (user[`${field}Attempts`] || 0) + 1;
+        await user.save();
+        const left = Math.max(0, MAX_CODE_ATTEMPTS - user[`${field}Attempts`]);
+        return left > 0
+            ? `Incorrect code. ${left} attempt${left === 1 ? "" : "s"} left.`
+            : "Too many incorrect attempts. Request a new code.";
+    }
+    user[`${field}CodeHash`] = undefined;
+    user[`${field}Expires`]  = undefined;
+    user[`${field}SentAt`]   = undefined;
+    user[`${field}Attempts`] = 0;
+    return "";
+}
+
 // STATIC
 app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
@@ -203,11 +391,17 @@ app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js"))
 app.get("/logo.png",  (req, res) => res.sendFile(path.join(__dirname, "logo.png")));
 app.get("/api/ping",  (req, res) => res.json({ ok: true }));
 app.get("/api/csrf",  (req, res) => res.json({ ok: true, token: ensureCsrfToken(req) }));
+app.get("/api/mail-status", (req, res) => res.json({ ok: true, mailEnabled: MAIL_ENABLED }));
 
-// RESET (remove after use)
-app.get("/api/reset-users", async (req, res) => {
-    await User.deleteMany({});
-    res.json({ ok: true, message: "All users wiped." });
+// DESTRUCTIVE: wipes every account. Owner session + CSRF + explicit confirmation
+// phrase required, and it is a POST so it cannot be triggered by visiting a URL.
+app.post("/api/reset-users", requireOwner, requireCsrf, async (req, res) => {
+    if (req.body.confirm !== "DELETE ALL USERS") {
+        return res.json({ ok: false, error: 'Send { "confirm": "DELETE ALL USERS" } to proceed.' });
+    }
+    const result = await User.deleteMany({});
+    console.warn(`All users wiped by ${req.session.username} (${result.deletedCount} removed).`);
+    res.json({ ok: true, message: `Wiped ${result.deletedCount} user(s).` });
 });
 
 // SIGNUP
@@ -226,9 +420,25 @@ app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS
         if (existingEmail) return res.json({ ok: false, error: "Email already in use" });
 
         const hash = await bcrypt.hash(password, 10);
-        await User.create({ email: cleanEmail, username: cleanUsername, password: hash, dob, tier: "none" });
+        const user = await User.create({
+            email: cleanEmail,
+            username: cleanUsername,
+            password: hash,
+            dob,
+            tier: "none",
+            emailVerified: false
+        });
 
-        res.json({ ok: true, username: cleanUsername });
+        const issued = await issueCode(user, "verify");
+        res.json({
+            ok: true,
+            username: cleanUsername,
+            email: cleanEmail,
+            needsVerification: true,
+            mailSent: !!issued.sent,
+            devCode: issued.devCode,
+            error: issued.error || ""
+        });
     } catch (e) {
         console.error("Signup error:", e.message);
         if (e.code === 11000) {
@@ -236,6 +446,123 @@ app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS
             return res.json({ ok: false, error: field === "username" ? "Username already taken" : "Email already in use" });
         }
         res.json({ ok: false, error: "Signup failed: " + e.message });
+    }
+});
+
+// EMAIL VERIFICATION
+app.post("/api/verify-email", rateLimit("verify", 20, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const cleanUsername = String(req.body.username || "").trim();
+        const code = String(req.body.code || "").trim();
+        if (!cleanUsername || !code) return res.json({ ok: false, error: "Enter the 6-digit code" });
+
+        const user = await User.findOne({ username: cleanUsername });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (user.emailVerified) return res.json({ ok: false, error: "This email is already verified. Log in normally." });
+
+        const error = await consumeCode(user, "verify", code);
+        if (error) return res.json({ ok: false, error });
+
+        user.emailVerified = true;
+        await user.save();
+
+        req.session.username = user.username;
+        req.session.save(() => res.json({
+            ok: true,
+            username: user.username,
+            tier: user.tier,
+            isOwner: user.username === OWNER,
+            robloxUsername: user.robloxUsername || ""
+        }));
+    } catch (e) {
+        console.error("Verify error:", e.message);
+        res.json({ ok: false, error: "Could not verify that code" });
+    }
+});
+
+app.post("/api/resend-verification", rateLimit("resend", 6, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const cleanUsername = String(req.body.username || "").trim();
+        const user = await User.findOne({ username: cleanUsername });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (user.emailVerified) return res.json({ ok: false, error: "This email is already verified" });
+
+        const issued = await issueCode(user, "verify");
+        if (issued.error) return res.json({ ok: false, error: issued.error });
+        res.json({ ok: true, mailSent: !!issued.sent, devCode: issued.devCode });
+    } catch {
+        res.json({ ok: false, error: "Could not resend the code" });
+    }
+});
+
+// PASSWORD RESET
+app.post("/api/forgot-password", rateLimit("forgot", 6, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const cleanEmail = String(req.body.email || "").trim().toLowerCase();
+        if (!cleanEmail) return res.json({ ok: false, error: "Enter your email address" });
+
+        const user = await User.findOne({ email: cleanEmail });
+        // Always report success so this cannot be used to discover which emails are registered.
+        if (!user) return res.json({ ok: true, mailSent: MAIL_ENABLED });
+
+        const issued = await issueCode(user, "reset");
+        if (issued.error) return res.json({ ok: false, error: issued.error });
+        res.json({ ok: true, mailSent: !!issued.sent, devCode: issued.devCode });
+    } catch {
+        res.json({ ok: false, error: "Could not start a password reset" });
+    }
+});
+
+app.post("/api/reset-password", rateLimit("reset", 20, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const cleanEmail = String(req.body.email || "").trim().toLowerCase();
+        const code       = String(req.body.code || "").trim();
+        const password   = String(req.body.password || "");
+        if (!cleanEmail || !code) return res.json({ ok: false, error: "Enter the code from your email" });
+
+        const user = await User.findOne({ email: cleanEmail });
+        if (!user) return res.json({ ok: false, error: "That code is not valid" });
+
+        const passwordError = validatePassword(password, user.username, user.email);
+        if (passwordError) return res.json({ ok: false, error: passwordError });
+
+        const error = await consumeCode(user, "reset", code);
+        if (error) return res.json({ ok: false, error });
+
+        user.password = await bcrypt.hash(password, 10);
+        user.passwordChangedAt = new Date();
+        // Proving control of the inbox also proves the address is real.
+        user.emailVerified = true;
+        await user.save();
+
+        res.json({ ok: true, username: user.username });
+    } catch {
+        res.json({ ok: false, error: "Could not reset your password" });
+    }
+});
+
+app.post("/api/change-password", requireLogin, requireCsrf, rateLimit("change-pw", 12, AUTH_LIMIT_WINDOW_MS), async (req, res) => {
+    try {
+        const currentPassword = String(req.body.currentPassword || "");
+        const newPassword     = String(req.body.newPassword || "");
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+
+        const match = await bcrypt.compare(currentPassword, user.password);
+        if (!match) return res.json({ ok: false, error: "Your current password is incorrect" });
+
+        const passwordError = validatePassword(newPassword, user.username, user.email);
+        if (passwordError) return res.json({ ok: false, error: passwordError });
+        if (await bcrypt.compare(newPassword, user.password)) {
+            return res.json({ ok: false, error: "New password must be different from your current one" });
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.passwordChangedAt = new Date();
+        await user.save();
+        res.json({ ok: true });
+    } catch {
+        res.json({ ok: false, error: "Could not change your password" });
     }
 });
 
@@ -250,6 +577,19 @@ app.post("/api/login", rateLimit("login", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS),
         if (!user) return res.json({ ok: false, error: "Invalid username or password" });
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.json({ ok: false, error: "Invalid username or password" });
+
+        if (!user.emailVerified) {
+            const issued = await issueCode(user, "verify");
+            return res.json({
+                ok: false,
+                needsVerification: true,
+                username: user.username,
+                mailSent: !!issued.sent,
+                devCode: issued.devCode,
+                error: "Verify your email address to continue."
+            });
+        }
+
         req.session.username = user.username;
         req.session.save(() => res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" }));
     } catch (e) {
@@ -267,8 +607,33 @@ app.get("/api/me", async (req, res) => {
     try {
         const user = await User.findOne({ username: req.session.username });
         if (!user) return res.json({ ok: false });
-        res.json({ ok: true, username: user.username, tier: user.tier, isOwner: user.username === OWNER, robloxUsername: user.robloxUsername || "" });
+        res.json({
+            ok: true,
+            username: user.username,
+            tier: user.tier,
+            isOwner: user.username === OWNER,
+            robloxUsername: user.robloxUsername || ""
+        });
     } catch { res.json({ ok: false }); }
+});
+
+// ACCOUNT (Security tab)
+app.get("/api/account", requireLogin, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.session.username });
+        if (!user) return res.json({ ok: false, error: "User not found" });
+        res.json({
+            ok: true,
+            username: user.username,
+            email: user.email,
+            emailVerified: !!user.emailVerified,
+            tier: user.tier,
+            joinedAt: user.joinedAt,
+            passwordChangedAt: user.passwordChangedAt || null,
+            robloxUsername: user.robloxUsername || "",
+            mailEnabled: MAIL_ENABLED
+        });
+    } catch { res.json({ ok: false, error: "Could not load your account" }); }
 });
 
 // TRACKING
@@ -474,7 +839,13 @@ app.get("/api/result", requireLogin, async (req, res) => {
 app.get("/api/owner/users", requireOwner, async (req, res) => {
     try {
         const list = await User.find({}, { password: 0 });
-        res.json(list.map(u => ({ username: u.username, email: u.email, tier: u.tier, joinedAt: u.joinedAt })));
+        res.json(list.map(u => ({
+            username: u.username,
+            email: u.email,
+            tier: u.tier,
+            joinedAt: u.joinedAt,
+            emailVerified: !!u.emailVerified
+        })));
     } catch { res.json([]); }
 });
 
