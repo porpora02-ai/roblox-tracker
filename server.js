@@ -5,7 +5,6 @@ const bcrypt     = require("bcryptjs");
 const session    = require("express-session");
 const MongoStore = require("connect-mongo");
 const mongoose   = require("mongoose");
-const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -17,7 +16,7 @@ if (!MONGO_URI) {
     console.error("MONGO_URI is not set. Add your MongoDB connection string to the environment and restart.");
     // Names only, never values — helps spot a typo'd or missing key in the host's dashboard.
     const visible = Object.keys(process.env)
-        .filter(k => /mongo|smtp|session|node_env|port/i.test(k))
+        .filter(k => /mongo|session|node_env|port/i.test(k))
         .sort();
     console.error("Config-related keys this process can see:", visible.length ? visible.join(", ") : "(none)");
     process.exit(1);
@@ -35,124 +34,57 @@ if (!process.env.SESSION_SECRET) {
     console.warn("SESSION_SECRET not set. Using a temporary secret; sessions will not survive a restart.");
 }
 
-// ─── MAIL ─────────────────────────────────────────────────────────────────────
-const SMTP_HOST = process.env.SMTP_HOST || "";
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_USER = process.env.SMTP_USER || "";
-const SMTP_PASS = process.env.SMTP_PASS || "";
-const SMTP_FROM = process.env.SMTP_FROM || (SMTP_USER ? `Vantix <${SMTP_USER}>` : "");
-const MAIL_ENABLED = !!(SMTP_HOST && SMTP_USER && SMTP_PASS);
-// When SMTP is not configured outside production, codes are returned to the client
-// so the flow stays testable locally. Never enabled in production.
-const EXPOSE_DEV_CODES = !MAIL_ENABLED && !IS_PROD;
-
-let transporter = null;
-if (MAIL_ENABLED) {
-    transporter = nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_PORT === 465,
-        auth: { user: SMTP_USER, pass: SMTP_PASS }
-    });
-    // Catch placeholder values pasted straight from setup instructions.
-    if (/^your|example\.com|@gmail\.com>?$/i.test(SMTP_USER) && !SMTP_USER.includes("@")) {
-        console.error(`SMTP_USER looks like a placeholder ("${SMTP_USER}"). Set it to your real Gmail address.`);
-    }
-    if (!SMTP_USER.includes("@")) {
-        console.error(`SMTP_USER must be a full email address. Got: "${SMTP_USER}"`);
-    }
-    if (/^your|placeholder|app ?password$/i.test(SMTP_PASS)) {
-        console.error("SMTP_PASS looks like a placeholder. Set it to your 16-character Google App Password.");
-    }
-    if (SMTP_FROM && !/<[^>]+@[^>]+>|^[^<>]+@[^<>]+$/.test(SMTP_FROM)) {
-        console.error(`SMTP_FROM is malformed: "${SMTP_FROM}". Use: Vantix <you@gmail.com>`);
-    }
-
-    transporter.verify()
-        .then(() => console.log("SMTP ready:", SMTP_HOST, "as", SMTP_USER))
-        .catch(e => {
-            const msg = String(e.message || "");
-            let hint = "";
-            if (/535|BadCredentials|Username and Password not accepted/i.test(msg)) {
-                hint = "Gmail rejected the login. SMTP_PASS must be a 16-character App Password "
-                     + "(Google Account > Security > 2-Step Verification > App passwords), not your normal password. "
-                     + "2-Step Verification must be ON for that option to exist.";
-            } else if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) {
-                hint = `SMTP_HOST could not be resolved. Check the spelling: "${SMTP_HOST}" (should be smtp.gmail.com).`;
-            } else if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET/i.test(msg)) {
-                hint = `Could not reach ${SMTP_HOST}:${SMTP_PORT}. Use port 587, or 465 if your host blocks 587.`;
-            } else if (/self.signed|certificate/i.test(msg)) {
-                hint = "TLS problem. With port 465 the connection must be secure; with 587 it upgrades via STARTTLS.";
-            }
-            console.error("SMTP verify failed:", msg);
-            if (hint) console.error("  ->", hint);
-        });
-} else {
-    console.warn("SMTP not configured. Set SMTP_HOST / SMTP_USER / SMTP_PASS to send real email.");
-    if (EXPOSE_DEV_CODES) console.warn("Dev mode: verification codes will be printed to this console.");
-}
-
-function codeEmailHtml({ heading, intro, code, footnote }) {
-    return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#04070a;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#04070a;padding:32px 16px;">
-<tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#080d10;border:1px solid rgba(0,255,136,0.16);border-radius:18px;overflow:hidden;font-family:'Helvetica Neue',Arial,sans-serif;">
-<tr><td style="padding:26px 32px 0;">
-  <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:bold;letter-spacing:4px;color:#00ff88;">VANTIX</div>
-</td></tr>
-<tr><td style="padding:22px 32px 0;">
-  <div style="font-size:22px;font-weight:bold;color:#e6f4ec;">${heading}</div>
-  <div style="font-size:14px;line-height:1.65;color:rgba(230,244,236,0.62);margin-top:10px;">${intro}</div>
-</td></tr>
-<tr><td style="padding:24px 32px 0;">
-  <div style="background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.22);border-radius:12px;padding:20px;text-align:center;">
-    <div style="font-family:'Courier New',monospace;font-size:34px;font-weight:bold;letter-spacing:10px;color:#00ff88;">${code}</div>
-  </div>
-</td></tr>
-<tr><td style="padding:20px 32px 30px;">
-  <div style="font-size:12.5px;line-height:1.7;color:rgba(230,244,236,0.36);">${footnote}</div>
-</td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
-}
-
-async function sendCode(to, purpose, code) {
-    const copy = purpose === "verify"
-        ? {
-            subject: "Your Vantix verification code",
-            heading: "Verify your email",
-            intro: "Enter this code in Vantix to finish creating your account.",
-            footnote: "This code expires in 15 minutes. If you did not sign up for Vantix, you can ignore this email."
-        }
-        : {
-            subject: "Your Vantix password reset code",
-            heading: "Reset your password",
-            intro: "Enter this code in Vantix to choose a new password.",
-            footnote: "This code expires in 15 minutes. If you did not request a password reset, ignore this email and your password stays unchanged."
-        };
-
-    if (!MAIL_ENABLED) {
-        console.log(`[mail:disabled] ${purpose} code for ${to}: ${code}`);
-        return false;
-    }
-    await transporter.sendMail({
-        from: SMTP_FROM,
-        to,
-        subject: copy.subject,
-        text: `${copy.heading}\n\nYour code is ${code}\n\n${copy.footnote}`,
-        html: codeEmailHtml({ heading: copy.heading, intro: copy.intro, code, footnote: copy.footnote })
-    });
-    return true;
-}
+// ─── ROBLOX VERIFICATION ──────────────────────────────────────────────────────
+// Accounts are verified by proving control of a Roblox profile: the user pastes
+// a one-time code into their profile's About section and we read it back from
+// Roblox's public API. No email provider involved.
+const CODE_TTL_MS       = 30 * 60 * 1000;
+const MAX_CODE_ATTEMPTS = 12;
 
 function newCode() {
-    return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+    return "VANTIX-" + crypto.randomBytes(3).toString("hex").toUpperCase();
 }
 
-const CODE_TTL_MS        = 15 * 60 * 1000;
-const RESEND_COOLDOWN_MS = 60 * 1000;
-const MAX_CODE_ATTEMPTS  = 6;
+async function robloxJson(url, options) {
+    const res = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options?.headers || {}) }
+    });
+    if (!res.ok) {
+        const err = new Error(`Roblox API ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+    return res.json();
+}
+
+// Resolves a Roblox username to its account. Returns null when no such user exists.
+async function robloxLookup(username) {
+    const data = await robloxJson("https://users.roblox.com/v1/usernames/users", {
+        method: "POST",
+        body: JSON.stringify({ usernames: [username], excludeBannedUsers: false })
+    });
+    const hit = data?.data?.[0];
+    if (!hit?.id) return null;
+    return { id: hit.id, name: hit.name, displayName: hit.displayName || hit.name };
+}
+
+// Reads the profile's About text, which is where the verification code goes.
+async function robloxDescription(userId) {
+    const data = await robloxJson(`https://users.roblox.com/v1/users/${userId}`);
+    return String(data?.description || "");
+}
+
+async function robloxAvatar(userId) {
+    try {
+        const data = await robloxJson(
+            `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png&isCircular=false`
+        );
+        return data?.data?.[0]?.imageUrl || "";
+    } catch {
+        return "";
+    }
+}
 
 // ─── SCHEMAS ──────────────────────────────────────────────────────────────────
 const userSchema = new mongoose.Schema({
@@ -162,15 +94,14 @@ const userSchema = new mongoose.Schema({
     dob:      String,
     tier:     { type: String, default: "none" },
     robloxUsername: String,
+    robloxUserId:   Number,
+    robloxVerified: { type: Boolean, default: false },
     joinedAt: { type: Date, default: Date.now },
-    emailVerified:  { type: Boolean, default: false },
-    verifyCodeHash: String,
+    verifyCode:     String,
     verifyExpires:  Date,
-    verifySentAt:   Date,
     verifyAttempts: { type: Number, default: 0 },
-    resetCodeHash:  String,
+    resetCode:      String,
     resetExpires:   Date,
-    resetSentAt:    Date,
     resetAttempts:  { type: Number, default: 0 },
     passwordChangedAt: Date
 });
@@ -285,8 +216,9 @@ function validatePassword(password, username, email) {
     return "";
 }
 
-function validateSignup({ email, username, password, dob }) {
+function validateSignup({ email, username, password, dob, robloxUsername }) {
     if (!email || !username || !password || !dob) return "All fields required";
+    if (!robloxUsername) return "Enter your Roblox username";
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanUsername = String(username).trim();
     const domain = cleanEmail.split("@")[1] || "";
@@ -299,6 +231,9 @@ function validateSignup({ email, username, password, dob }) {
     }
     if (!/^[A-Za-z0-9_.]{3,24}$/.test(cleanUsername)) {
         return "Username must be 3-24 letters, numbers, dots, or underscores";
+    }
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(String(robloxUsername).trim())) {
+        return "Enter a valid Roblox username";
     }
     return validatePassword(password, cleanUsername, cleanEmail);
 }
@@ -320,10 +255,10 @@ app.use(express.urlencoded({ extended: true }));
 mongoose.connect(MONGO_URI)
     .then(async () => {
         console.log("MongoDB connected");
-        // Accounts created before email verification shipped stay usable.
+        // Accounts created before verification shipped stay usable.
         const grandfathered = await User.updateMany(
-            { emailVerified: { $exists: false } },
-            { $set: { emailVerified: true } }
+            { robloxVerified: { $exists: false } },
+            { $set: { robloxVerified: true } }
         );
         if (grandfathered.modifiedCount) {
             console.log(`Grandfathered ${grandfathered.modifiedCount} existing account(s) as verified.`);
@@ -369,54 +304,52 @@ function trackingPayload(user, status) {
     };
 }
 
-// Issues a fresh code of the given kind and emails it. Returns { sent, devCode, error }.
+// Issues a fresh profile code of the given kind ("verify" or "reset").
 async function issueCode(user, kind) {
     const field = kind === "verify" ? "verify" : "reset";
-    const sentAt = user[`${field}SentAt`];
-    if (sentAt && Date.now() - new Date(sentAt).getTime() < RESEND_COOLDOWN_MS) {
-        const wait = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - new Date(sentAt).getTime())) / 1000);
-        return { error: `Please wait ${wait}s before requesting another code.` };
-    }
     const code = newCode();
-    user[`${field}CodeHash`] = await bcrypt.hash(code, 10);
+    user[`${field}Code`]     = code;
     user[`${field}Expires`]  = new Date(Date.now() + CODE_TTL_MS);
-    user[`${field}SentAt`]   = new Date();
     user[`${field}Attempts`] = 0;
     await user.save();
-
-    let sent = false;
-    try {
-        sent = await sendCode(user.email, kind, code);
-    } catch (e) {
-        console.error(`Failed to send ${kind} email:`, e.message);
-        return { error: "Could not send the email. Try again in a moment." };
-    }
-    return { sent, devCode: EXPOSE_DEV_CODES ? code : undefined };
+    return code;
 }
 
-// Checks a submitted code. Returns "" on success, or an error string.
-async function consumeCode(user, kind, submitted) {
+// Checks the user's Roblox About text for their pending code.
+// Returns { ok: true } or { ok: false, error }.
+async function checkProfileCode(user, kind) {
     const field   = kind === "verify" ? "verify" : "reset";
-    const hash    = user[`${field}CodeHash`];
+    const code    = user[`${field}Code`];
     const expires = user[`${field}Expires`];
-    if (!hash || !expires) return "Request a new code first.";
-    if (Date.now() > new Date(expires).getTime()) return "That code expired. Request a new one.";
-    if ((user[`${field}Attempts`] || 0) >= MAX_CODE_ATTEMPTS) return "Too many incorrect attempts. Request a new code.";
 
-    const match = await bcrypt.compare(String(submitted || "").trim(), hash);
-    if (!match) {
+    if (!code || !expires) return { ok: false, error: "Request a new code first." };
+    if (Date.now() > new Date(expires).getTime()) return { ok: false, error: "That code expired. Generate a new one." };
+    if ((user[`${field}Attempts`] || 0) >= MAX_CODE_ATTEMPTS) {
+        return { ok: false, error: "Too many checks. Generate a new code." };
+    }
+    if (!user.robloxUserId) return { ok: false, error: "No Roblox profile is linked to this account." };
+
+    let description = "";
+    try {
+        description = await robloxDescription(user.robloxUserId);
+    } catch (e) {
+        console.error("Roblox profile fetch failed:", e.message);
+        return { ok: false, error: "Could not reach Roblox right now. Try again in a moment." };
+    }
+
+    if (!description.toUpperCase().includes(code.toUpperCase())) {
         user[`${field}Attempts`] = (user[`${field}Attempts`] || 0) + 1;
         await user.save();
-        const left = Math.max(0, MAX_CODE_ATTEMPTS - user[`${field}Attempts`]);
-        return left > 0
-            ? `Incorrect code. ${left} attempt${left === 1 ? "" : "s"} left.`
-            : "Too many incorrect attempts. Request a new code.";
+        return {
+            ok: false,
+            error: "Code not found in your Roblox profile yet. Paste it into your About section, save on Roblox, then try again."
+        };
     }
-    user[`${field}CodeHash`] = undefined;
+
+    user[`${field}Code`]     = undefined;
     user[`${field}Expires`]  = undefined;
-    user[`${field}SentAt`]   = undefined;
     user[`${field}Attempts`] = 0;
-    return "";
+    return { ok: true };
 }
 
 // STATIC
@@ -426,7 +359,6 @@ app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js"))
 app.get("/logo.png",  (req, res) => res.sendFile(path.join(__dirname, "logo.png")));
 app.get("/api/ping",  (req, res) => res.json({ ok: true }));
 app.get("/api/csrf",  (req, res) => res.json({ ok: true, token: ensureCsrfToken(req) }));
-app.get("/api/mail-status", (req, res) => res.json({ ok: true, mailEnabled: MAIL_ENABLED }));
 
 // DESTRUCTIVE: wipes every account. Owner session + CSRF + explicit confirmation
 // phrase required, and it is a POST so it cannot be triggered by visiting a URL.
@@ -443,7 +375,8 @@ app.post("/api/reset-users", requireOwner, requireCsrf, async (req, res) => {
 app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
         const { email, username, password, dob } = req.body;
-        const validationError = validateSignup({ email, username, password, dob });
+        const robloxUsername = cleanRobloxUsername(req.body.robloxUsername);
+        const validationError = validateSignup({ email, username, password, dob, robloxUsername });
         if (validationError) return res.json({ ok: false, error: validationError });
 
         const cleanEmail    = String(email).trim().toLowerCase();
@@ -454,6 +387,18 @@ app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS
         if (existingUser)  return res.json({ ok: false, error: "Username already taken" });
         if (existingEmail) return res.json({ ok: false, error: "Email already in use" });
 
+        let profile = null;
+        try {
+            profile = await robloxLookup(robloxUsername);
+        } catch (e) {
+            console.error("Roblox lookup failed:", e.message);
+            return res.json({ ok: false, error: "Could not reach Roblox right now. Try again in a moment." });
+        }
+        if (!profile) return res.json({ ok: false, error: `No Roblox user named "${robloxUsername}" exists` });
+
+        const taken = await User.findOne({ robloxUserId: profile.id, robloxVerified: true });
+        if (taken) return res.json({ ok: false, error: "That Roblox account is already linked to a Vantix account" });
+
         const hash = await bcrypt.hash(password, 10);
         const user = await User.create({
             email: cleanEmail,
@@ -461,18 +406,21 @@ app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS
             password: hash,
             dob,
             tier: "none",
-            emailVerified: false
+            robloxUsername: profile.name,
+            robloxUserId: profile.id,
+            robloxVerified: false
         });
 
-        const issued = await issueCode(user, "verify");
+        const code = await issueCode(user, "verify");
         res.json({
             ok: true,
             username: cleanUsername,
-            email: cleanEmail,
             needsVerification: true,
-            mailSent: !!issued.sent,
-            devCode: issued.devCode,
-            error: issued.error || ""
+            code,
+            robloxUsername: profile.name,
+            robloxDisplayName: profile.displayName,
+            robloxUserId: profile.id,
+            avatar: await robloxAvatar(profile.id)
         });
     } catch (e) {
         console.error("Signup error:", e.message);
@@ -484,21 +432,39 @@ app.post("/api/signup", rateLimit("signup", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS
     }
 });
 
-// EMAIL VERIFICATION
-app.post("/api/verify-email", rateLimit("verify", 20, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+// ROBLOX VERIFICATION
+app.get("/api/verify-state", async (req, res) => {
     try {
-        const cleanUsername = String(req.body.username || "").trim();
-        const code = String(req.body.code || "").trim();
-        if (!cleanUsername || !code) return res.json({ ok: false, error: "Enter the 6-digit code" });
-
-        const user = await User.findOne({ username: cleanUsername });
+        const username = String(req.query.username || "").trim();
+        const user = await User.findOne({ username });
         if (!user) return res.json({ ok: false, error: "Account not found" });
-        if (user.emailVerified) return res.json({ ok: false, error: "This email is already verified. Log in normally." });
+        if (user.robloxVerified) return res.json({ ok: true, verified: true });
+        res.json({
+            ok: true,
+            verified: false,
+            code: user.verifyCode || "",
+            robloxUsername: user.robloxUsername || "",
+            robloxUserId: user.robloxUserId || 0,
+            avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : ""
+        });
+    } catch {
+        res.json({ ok: false, error: "Could not load verification state" });
+    }
+});
 
-        const error = await consumeCode(user, "verify", code);
-        if (error) return res.json({ ok: false, error });
+app.post("/api/verify-roblox", rateLimit("verify", 40, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+    try {
+        const username = String(req.body.username || "").trim();
+        if (!username) return res.json({ ok: false, error: "Missing account" });
 
-        user.emailVerified = true;
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
+        if (user.robloxVerified) return res.json({ ok: false, error: "This account is already verified. Log in normally." });
+
+        const result = await checkProfileCode(user, "verify");
+        if (!result.ok) return res.json({ ok: false, error: result.error });
+
+        user.robloxVerified = true;
         await user.save();
 
         req.session.username = user.username;
@@ -511,63 +477,69 @@ app.post("/api/verify-email", rateLimit("verify", 20, AUTH_LIMIT_WINDOW_MS), req
         }));
     } catch (e) {
         console.error("Verify error:", e.message);
-        res.json({ ok: false, error: "Could not verify that code" });
+        res.json({ ok: false, error: "Could not verify that profile" });
     }
 });
 
-app.post("/api/resend-verification", rateLimit("resend", 6, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+app.post("/api/new-code", rateLimit("newcode", 12, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
-        const cleanUsername = String(req.body.username || "").trim();
-        const user = await User.findOne({ username: cleanUsername });
+        const username = String(req.body.username || "").trim();
+        const kind = req.body.kind === "reset" ? "reset" : "verify";
+        const user = await User.findOne({ username });
         if (!user) return res.json({ ok: false, error: "Account not found" });
-        if (user.emailVerified) return res.json({ ok: false, error: "This email is already verified" });
+        if (kind === "verify" && user.robloxVerified) return res.json({ ok: false, error: "This account is already verified" });
 
-        const issued = await issueCode(user, "verify");
-        if (issued.error) return res.json({ ok: false, error: issued.error });
-        res.json({ ok: true, mailSent: !!issued.sent, devCode: issued.devCode });
+        const code = await issueCode(user, kind);
+        res.json({ ok: true, code });
     } catch {
-        res.json({ ok: false, error: "Could not resend the code" });
+        res.json({ ok: false, error: "Could not generate a new code" });
     }
 });
 
-// PASSWORD RESET
-app.post("/api/forgot-password", rateLimit("forgot", 6, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+// PASSWORD RESET (via Roblox profile, no email)
+app.post("/api/forgot-password", rateLimit("forgot", 12, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
-        const cleanEmail = String(req.body.email || "").trim().toLowerCase();
-        if (!cleanEmail) return res.json({ ok: false, error: "Enter your email address" });
+        const username = String(req.body.username || "").trim();
+        if (!username) return res.json({ ok: false, error: "Enter your Vantix username" });
 
-        const user = await User.findOne({ email: cleanEmail });
-        // Always report success so this cannot be used to discover which emails are registered.
-        if (!user) return res.json({ ok: true, mailSent: MAIL_ENABLED });
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "No account with that username" });
+        if (!user.robloxUserId) {
+            return res.json({ ok: false, error: "This account has no linked Roblox profile, so it cannot be reset this way." });
+        }
 
-        const issued = await issueCode(user, "reset");
-        if (issued.error) return res.json({ ok: false, error: issued.error });
-        res.json({ ok: true, mailSent: !!issued.sent, devCode: issued.devCode });
+        const code = await issueCode(user, "reset");
+        res.json({
+            ok: true,
+            username: user.username,
+            code,
+            robloxUsername: user.robloxUsername || "",
+            avatar: await robloxAvatar(user.robloxUserId)
+        });
     } catch {
         res.json({ ok: false, error: "Could not start a password reset" });
     }
 });
 
-app.post("/api/reset-password", rateLimit("reset", 20, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
+app.post("/api/reset-password", rateLimit("reset", 40, AUTH_LIMIT_WINDOW_MS), requireCsrf, async (req, res) => {
     try {
-        const cleanEmail = String(req.body.email || "").trim().toLowerCase();
-        const code       = String(req.body.code || "").trim();
-        const password   = String(req.body.password || "");
-        if (!cleanEmail || !code) return res.json({ ok: false, error: "Enter the code from your email" });
+        const username = String(req.body.username || "").trim();
+        const password = String(req.body.password || "");
+        if (!username) return res.json({ ok: false, error: "Missing account" });
 
-        const user = await User.findOne({ email: cleanEmail });
-        if (!user) return res.json({ ok: false, error: "That code is not valid" });
+        const user = await User.findOne({ username });
+        if (!user) return res.json({ ok: false, error: "Account not found" });
 
         const passwordError = validatePassword(password, user.username, user.email);
         if (passwordError) return res.json({ ok: false, error: passwordError });
 
-        const error = await consumeCode(user, "reset", code);
-        if (error) return res.json({ ok: false, error });
+        const result = await checkProfileCode(user, "reset");
+        if (!result.ok) return res.json({ ok: false, error: result.error });
 
         user.password = await bcrypt.hash(password, 10);
         user.passwordChangedAt = new Date();
-        // Proving control of the inbox also proves the address is real.
-        user.emailVerified = true;
+        // Controlling the profile also proves the link is genuine.
+        user.robloxVerified = true;
         await user.save();
 
         res.json({ ok: true, username: user.username });
@@ -613,15 +585,18 @@ app.post("/api/login", rateLimit("login", AUTH_LIMIT_MAX, AUTH_LIMIT_WINDOW_MS),
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.json({ ok: false, error: "Invalid username or password" });
 
-        if (!user.emailVerified) {
-            const issued = await issueCode(user, "verify");
+        if (!user.robloxVerified) {
+            const code = user.verifyCode && user.verifyExpires && Date.now() < new Date(user.verifyExpires).getTime()
+                ? user.verifyCode
+                : await issueCode(user, "verify");
             return res.json({
                 ok: false,
                 needsVerification: true,
                 username: user.username,
-                mailSent: !!issued.sent,
-                devCode: issued.devCode,
-                error: "Verify your email address to continue."
+                code,
+                robloxUsername: user.robloxUsername || "",
+                avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : "",
+                error: "Verify your Roblox profile to continue."
             });
         }
 
@@ -661,12 +636,13 @@ app.get("/api/account", requireLogin, async (req, res) => {
             ok: true,
             username: user.username,
             email: user.email,
-            emailVerified: !!user.emailVerified,
+            robloxVerified: !!user.robloxVerified,
+            robloxUsername: user.robloxUsername || "",
+            robloxUserId: user.robloxUserId || 0,
+            avatar: user.robloxUserId ? await robloxAvatar(user.robloxUserId) : "",
             tier: user.tier,
             joinedAt: user.joinedAt,
-            passwordChangedAt: user.passwordChangedAt || null,
-            robloxUsername: user.robloxUsername || "",
-            mailEnabled: MAIL_ENABLED
+            passwordChangedAt: user.passwordChangedAt || null
         });
     } catch { res.json({ ok: false, error: "Could not load your account" }); }
 });
@@ -879,7 +855,8 @@ app.get("/api/owner/users", requireOwner, async (req, res) => {
             email: u.email,
             tier: u.tier,
             joinedAt: u.joinedAt,
-            emailVerified: !!u.emailVerified
+            robloxUsername: u.robloxUsername || "",
+            emailVerified: !!u.robloxVerified
         })));
     } catch { res.json([]); }
 });
