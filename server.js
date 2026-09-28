@@ -353,10 +353,17 @@ async function checkProfileCode(user, kind) {
 }
 
 // STATIC
-app.get("/",          (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
-app.get("/app.js",    (req, res) => res.sendFile(path.join(__dirname, "app.js")));
-app.get("/logo.png",  (req, res) => res.sendFile(path.join(__dirname, "logo.png")));
+// Brand assets (logos, favicons, social cards) are served straight from /brand.
+app.use("/brand", express.static(path.join(__dirname, "brand"), {
+    maxAge: IS_PROD ? "7d" : 0,
+    fallthrough: true
+}));
+app.get("/",            (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/style.css",   (req, res) => res.sendFile(path.join(__dirname, "style.css")));
+app.get("/app.js",      (req, res) => res.sendFile(path.join(__dirname, "app.js")));
+app.get("/favicon.ico", (req, res) => res.sendFile(path.join(__dirname, "brand", "favicon.ico")));
+app.get("/favicon.svg", (req, res) => res.sendFile(path.join(__dirname, "brand", "favicon.svg")));
+app.get("/logo.png",    (req, res) => res.sendFile(path.join(__dirname, "brand", "vantix-icon-512.png")));
 app.get("/api/ping",  (req, res) => res.json({ ok: true }));
 app.get("/api/csrf",  (req, res) => res.json({ ok: true, token: ensureCsrfToken(req) }));
 
