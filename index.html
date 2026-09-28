@@ -8,9 +8,7 @@
 <title>Vantix — Roblox Server Intelligence</title>
 <meta name="description" content="Live Roblox server population tracking with tier-based access. Find quiet servers, watch every connected game, and join instantly.">
 
-<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/brand/favicon.ico">
-<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3ClinearGradient%20id%3D%22a%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%237BFFC2%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%2300DB76%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22b%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23E4FFF2%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%233AFFA2%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20width%3D%22512%22%20height%3D%22512%22%20rx%3D%22115%22%20fill%3D%22%230A1A13%22%2F%3E%3Crect%20x%3D%22103.5%22%20y%3D%22124.8%22%20width%3D%2249.2%22%20height%3D%22124.6%22%20rx%3D%2218.0%22%20fill%3D%22url%28%23a%29%22%2F%3E%3Crect%20x%3D%22167.4%22%20y%3D%22193.7%22%20width%3D%2249.2%22%20height%3D%22124.6%22%20rx%3D%2218.0%22%20fill%3D%22url%28%23a%29%22%2F%3E%3Crect%20x%3D%22231.4%22%20y%3D%22262.6%22%20width%3D%2249.2%22%20height%3D%22124.6%22%20rx%3D%2218.0%22%20fill%3D%22url%28%23b%29%22%2F%3E%3Crect%20x%3D%22295.4%22%20y%3D%22193.7%22%20width%3D%2249.2%22%20height%3D%22124.6%22%20rx%3D%2218.0%22%20fill%3D%22url%28%23a%29%22%2F%3E%3Crect%20x%3D%22359.3%22%20y%3D%22124.8%22%20width%3D%2249.2%22%20height%3D%22124.6%22%20rx%3D%2218.0%22%20fill%3D%22url%28%23a%29%22%2F%3E%3C%2Fsvg%3E">
 <meta property="og:title" content="Vantix — Roblox Server Intelligence">
 <meta property="og:description" content="Track every active server in real time.">
 <meta property="og:image" content="/brand/og-image-1200x630.png">
@@ -23,6 +21,7 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute"><defs><linearGradient id="vxBar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7BFFC2"/><stop offset="1" stop-color="#00DB76"/></linearGradient><linearGradient id="vxCore" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E4FFF2"/><stop offset="1" stop-color="#3AFFA2"/></linearGradient></defs></svg>
 
 <!-- ambient layers -->
 <div class="fx fx-grid"></div>
@@ -35,7 +34,7 @@
     <nav class="lnav" id="lnav">
         <div class="wrap lnav-inner">
             <a class="brand" href="#top">
-                <img src="/brand/vantix-icon-256.png" alt="" width="30" height="30">
+                <svg class="brand-mark" style="width:30px;height:30px;flex:none" viewBox="0 0 512 512" role="img" aria-label="Vantix"><rect width="512" height="512" rx="115" fill="#0A1A13"/><rect x="103.5" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="167.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="231.4" y="262.6" width="49.2" height="124.6" rx="18.0" fill="url(#vxCore)"/><rect x="295.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="359.3" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/></svg>
                 <span class="brand-word">VANTIX</span>
             </a>
             <div class="lnav-links">
@@ -297,7 +296,7 @@
             <div class="lfoot-grid">
                 <div class="lfoot-brand">
                     <a class="brand" href="#top">
-                        <img src="/brand/vantix-icon-256.png" alt="" width="30" height="30">
+                        <svg class="brand-mark" style="width:30px;height:30px;flex:none" viewBox="0 0 512 512" role="img" aria-label="Vantix"><rect width="512" height="512" rx="115" fill="#0A1A13"/><rect x="103.5" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="167.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="231.4" y="262.6" width="49.2" height="124.6" rx="18.0" fill="url(#vxCore)"/><rect x="295.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="359.3" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/></svg>
                         <span class="brand-word">VANTIX</span>
                     </a>
                     <p>Real-time Roblox server intelligence. Live population, tier-based access, instant whitelisted joins.</p>
@@ -334,7 +333,7 @@
     <div class="auth-grid">
         <aside class="auth-aside">
             <a class="brand" href="#" data-page="landingPage">
-                <img src="/brand/vantix-icon-256.png" alt="" width="30" height="30">
+                <svg class="brand-mark" style="width:30px;height:30px;flex:none" viewBox="0 0 512 512" role="img" aria-label="Vantix"><rect width="512" height="512" rx="115" fill="#0A1A13"/><rect x="103.5" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="167.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="231.4" y="262.6" width="49.2" height="124.6" rx="18.0" fill="url(#vxCore)"/><rect x="295.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="359.3" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/></svg>
                 <span class="brand-word">VANTIX</span>
             </a>
             <h2>Start tracking<br>in under a minute.</h2>
@@ -390,7 +389,7 @@
     <div class="auth-grid">
         <aside class="auth-aside">
             <a class="brand" href="#" data-page="landingPage">
-                <img src="/brand/vantix-icon-256.png" alt="" width="30" height="30">
+                <svg class="brand-mark" style="width:30px;height:30px;flex:none" viewBox="0 0 512 512" role="img" aria-label="Vantix"><rect width="512" height="512" rx="115" fill="#0A1A13"/><rect x="103.5" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="167.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="231.4" y="262.6" width="49.2" height="124.6" rx="18.0" fill="url(#vxCore)"/><rect x="295.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="359.3" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/></svg>
                 <span class="brand-word">VANTIX</span>
             </a>
             <h2>Welcome back<br>to the console.</h2>
@@ -544,7 +543,7 @@
 
     <aside class="side" id="sidebar">
         <div class="side-head">
-            <img src="/brand/vantix-icon-256.png" alt="Vantix" width="34" height="34">
+            <svg class="brand-mark" style="width:34px;height:34px;flex:none" viewBox="0 0 512 512" role="img" aria-label="Vantix"><rect width="512" height="512" rx="115" fill="#0A1A13"/><rect x="103.5" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="167.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="231.4" y="262.6" width="49.2" height="124.6" rx="18.0" fill="url(#vxCore)"/><rect x="295.4" y="193.7" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/><rect x="359.3" y="124.8" width="49.2" height="124.6" rx="18.0" fill="url(#vxBar)"/></svg>
             <span class="bt">
                 <strong>VANTIX</strong>
                 <span>CONSOLE</span>
